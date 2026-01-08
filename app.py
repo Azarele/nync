@@ -6,8 +6,11 @@ import auth_utils as auth
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote
 
 # 1. SETUP
-favicon = "nync_favicon.png" 
-st.set_page_config(page_title="Nync", page_icon=favicon, layout="wide", initial_sidebar_state="collapsed")
+# (Ensure nync_favicon.png exists or this line will warn)
+try:
+    st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
+except:
+    st.set_page_config(page_title="Nync", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
 # --- CSS: UI CLEANUP & STYLING ---
 st.markdown("""
@@ -19,9 +22,9 @@ st.markdown("""
     [data-testid="stSidebar"] { display: none; }
     [data-testid="stSidebarCollapsedControl"] { display: none; }
 
-    /* --- UI POLISH (THE FIX) --- */
+    /* --- UI POLISH --- */
     
-    /* 1. NUCLEAR OPTION: Hide Fullscreen Buttons on Images */
+    /* Hide Fullscreen Buttons on Images */
     button[title="View fullscreen"], 
     [data-testid="StyledFullScreenButton"],
     [data-testid="stImage"] button {
@@ -30,7 +33,7 @@ st.markdown("""
         pointer-events: none !important;
     }
     
-    /* 2. Hide the Anchor Link icons next to headers */
+    /* Hide Anchor Link icons */
     [data-testid="stHeaderAction"] {
         display: none !important;
         visibility: hidden !important;
@@ -77,9 +80,9 @@ if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 
 # --- CRITICAL FIX: RESTORE SESSION ONCE ---
-# We check cookies exactly one time at the start of the script.
-# This prevents the "DuplicateElementKey" error.
-if not st.session_state.session:
+# Only check cookies if we are NOT logged in yet.
+# This prevents the double-reload glitch.
+if not st.session_state.user:
     auth.restore_session_from_cookies()
 
 # --- VOTE STASHING LOGIC ---
@@ -94,15 +97,14 @@ if "invite" in st.query_params: st.session_state.pending_invite = st.query_param
 # --- STRIPE CALLBACK HANDLER ---
 if "stripe_session_id" in st.query_params:
     session_id = st.query_params["stripe_session_id"]
-    st.toast("🔄 Verifying Payment...")
     
     # Note: We already attempted restore above, so we just check user now
     if st.session_state.user:
+        st.toast("🔄 Verifying Payment...")
         price_id = auth.verify_stripe_payment(session_id)
         
         if price_id:
             # MAP PRICE IDs TO TIER NAMES
-            # Replace these with your actual Stripe Price IDs
             new_tier = "paid" 
             if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
             elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
@@ -177,6 +179,7 @@ else:
 
     # 2. Check for Voting (Strict Mode: Must be logged in)
     if "vote" in st.query_params:
+        # Note: Ensure modules/vote.py has a show() function that accepts these args
         vote.show(st.query_params["vote"], auth.supabase)
         st.stop() # Hide the rest of the dashboard so they focus on voting
 
@@ -213,6 +216,7 @@ else:
             auth.supabase.auth.sign_out()
             auth.clear_cookies()
             st.session_state.session = None
+            st.session_state.user = None
             st.rerun()
 
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
@@ -221,6 +225,8 @@ else:
 
     if nav == "Dashboard":
         my_teams = auth.get_user_teams(st.session_state.user.id)
+        
+        # Check active team validity
         if 'active_team' not in st.session_state or not st.session_state.active_team or st.session_state.active_team not in my_teams:
             if my_teams:
                 first = list(my_teams.keys())[0]
@@ -237,26 +243,40 @@ else:
             
             # --- TIER BADGE & XSS PROTECTION ---
             profile = auth.get_user_profile(st.session_state.user.id)
-            user_tier = profile.get('subscription_tier', 'free').upper()
+            user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
             tier_color = "grey"
             if user_tier == "SQUAD": tier_color = "orange"
             if user_tier == "GUILD": tier_color = "blue"
             if user_tier == "EMPIRE": tier_color = "violet"
             
-            # Sanitize inputs to prevent XSS attacks
+            # Sanitize inputs
             safe_team_name = html.escape(st.session_state.active_team)
             safe_tier_name = html.escape(user_tier)
 
-            st.markdown(f"### {safe_team_name} <span style='background-color:#333; color:{tier_color}; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle;'>{safe_tier_name}</span>", unsafe_allow_html=True)
+            # Team Selector (If user has multiple teams)
+            if len(my_teams) > 1:
+                col_title, col_sel = st.columns([3, 1])
+                with col_title:
+                    st.markdown(f"### {safe_team_name} <span style='background-color:#333; color:{tier_color}; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle;'>{safe_tier_name}</span>", unsafe_allow_html=True)
+                with col_sel:
+                    new_team = st.selectbox("Switch Team", list(my_teams.keys()), label_visibility="collapsed")
+                    if new_team != st.session_state.active_team:
+                        st.session_state.active_team = new_team
+                        st.rerun()
+            else:
+                st.markdown(f"### {safe_team_name} <span style='background-color:#333; color:{tier_color}; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle;'>{safe_tier_name}</span>", unsafe_allow_html=True)
             
             if status == 'locked':
                 st.title("🔒 Team Locked")
                 st.error("Your 14-day trial has ended.")
-                st.button("💎 Upgrade Now", type="primary")
+                if st.button("💎 Upgrade Now", type="primary"):
+                    st.session_state.nav = "Pricing"
+                    st.rerun()
             else:
                 roster = auth.get_team_roster(st.session_state.active_team_id)
+                # TABS
                 t1, t2 = st.tabs(["Pain Board", "Scheduler"])
-                with t1: martyr_board.show(auth.supabase, st.session_state.user, roster)
+                with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id) # Fixed args
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
 
     elif nav == "Settings":
