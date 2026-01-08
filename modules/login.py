@@ -7,11 +7,9 @@ def show():
     
     with c2:
         # --- LOGO CENTERING ---
-        # Create 3 sub-columns and place image in the middle one to center it.
         sc1, sc2, sc3 = st.columns([1, 1, 1])
         with sc2:
             try:
-                # use_container_width makes it fill the middle column
                 st.image("nync_marketing.png", use_container_width=True) 
             except:
                 st.header("⚡")
@@ -20,17 +18,17 @@ def show():
         st.markdown("<h1 style='text-align: center; margin-top: 0px;'>Nync.</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #888;'>Stop maximizing convenience. Start minimizing pain.</p>", unsafe_allow_html=True)
         
-        st.write("") # Spacer
+        st.write("") 
 
         tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
         
-        # --- TAB 1: SIGN IN ---
+        # --- TAB 1: LOG IN ---
         with tab1:
             with st.form("login_form"):
                 email = st.text_input("Email", key="login_email")
                 password = st.text_input("Password", type="password", key="login_pass")
                 
-                # prevent submission if empty
+                # Prevent "Login Failed" error on empty submit
                 submitted = st.form_submit_button("Log In", type="primary", use_container_width=True)
                 if submitted:
                     if not email or not password:
@@ -40,10 +38,31 @@ def show():
             
             st.write("---")
             
-            # GOOGLE LOGIN (Standard Link Button)
+            # --- GOOGLE LOGIN (FORCED SAME TAB) ---
             google_url = auth.get_google_url()
             if google_url:
-                st.link_button("🔵 Sign in with Google", google_url, use_container_width=True)
+                # This HTML button looks exactly like a Streamlit button but keeps you in the same tab
+                st.markdown(f"""
+                    <a href="{google_url}" target="_self" style="text-decoration: none;">
+                        <div style="
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            width: 100%;
+                            background-color: transparent;
+                            color: #ffffff;
+                            padding: 0.5rem 1rem;
+                            border-radius: 0.5rem;
+                            border: 1px solid rgba(250, 250, 250, 0.2);
+                            font-family: 'Source Sans Pro', sans-serif;
+                            font-weight: 400;
+                            cursor: pointer;
+                            transition: border-color 0.2s, color 0.2s;
+                        ">
+                            <span style="margin-right: 8px;">🔵</span> Sign in with Google
+                        </div>
+                    </a>
+                """, unsafe_allow_html=True)
 
         # --- TAB 2: SIGN UP ---
         with tab2:
@@ -51,8 +70,7 @@ def show():
                 email = st.text_input("Email", key="signup_email")
                 password = st.text_input("Password", type="password", key="signup_pass")
                 
-                submitted = st.form_submit_button("Create Account", use_container_width=True)
-                if submitted:
+                if st.form_submit_button("Create Account", use_container_width=True):
                     if not email or not password:
                         st.warning("Please enter your email and password.")
                     else:
