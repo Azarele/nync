@@ -58,7 +58,7 @@ def show(user, supabase):
 
     st.divider()
 
-    # 3. MY TEAMS & INVITE CODES (Restored)
+    # 3. MY TEAMS (Dropdown Style)
     st.subheader("My Teams")
     
     my_teams = auth.get_user_teams(user.id)
@@ -66,36 +66,41 @@ def show(user, supabase):
     if not my_teams:
         st.info("You are not in any teams yet.")
     else:
-        for name, tid in my_teams.items():
-            # Container for each team
-            with st.container():
-                st.markdown(f"#### 🛡️ {name}")
-                
-                # Fetch invite code and webhook for this team
-                try:
-                    t_data = supabase.table('teams').select('invite_code, webhook_url').eq('id', tid).single().execute()
-                    invite_code = t_data.data.get('invite_code', 'N/A')
-                    webhook = t_data.data.get('webhook_url', '')
-                except:
-                    invite_code = "Error"
-                    webhook = ""
+        # Create a dropdown with team names
+        team_names = list(my_teams.keys())
+        selected_team_name = st.selectbox("Select a Team to Manage", team_names)
+        
+        # Get the ID of the selected team
+        selected_tid = my_teams[selected_team_name]
+        
+        # Fetch details ONLY for the selected team
+        try:
+            t_data = supabase.table('teams').select('invite_code, webhook_url').eq('id', selected_tid).single().execute()
+            invite_code = t_data.data.get('invite_code', 'N/A')
+            webhook = t_data.data.get('webhook_url', '')
+        except:
+            invite_code = "Error"
+            webhook = ""
 
-                # Layout: Invite Code on Left, Settings on Right
-                c_code, c_settings = st.columns([1, 1.5])
-                
-                with c_code:
-                    st.caption("Invite Code")
-                    st.code(invite_code, language=None)
-                
-                with c_settings:
-                    with st.expander("🔌 Webhook Settings"):
-                        st.caption("Send notifications to Discord/Teams")
-                        new_hook = st.text_input("Webhook URL", value=webhook, key=f"wh_{tid}")
-                        if st.button("Save", key=f"save_{tid}"):
-                            supabase.table('teams').update({'webhook_url': new_hook}).eq('id', tid).execute()
-                            st.success("Saved!")
-                
-                st.divider()
+        # Display Details in a Clean Card
+        st.markdown(f"#### 🛡️ {selected_team_name}")
+        
+        c_code, c_settings = st.columns([1, 1.5])
+        
+        with c_code:
+            st.caption("Invite Code")
+            st.code(invite_code, language=None)
+            st.caption("Share this code with members to let them join.")
+        
+        with c_settings:
+            with st.expander("🔌 Webhook Settings", expanded=True):
+                st.caption("Send notifications to Discord/Teams")
+                new_hook = st.text_input("Webhook URL", value=webhook, key=f"wh_{selected_tid}")
+                if st.button("Save Webhook", key=f"save_{selected_tid}"):
+                    supabase.table('teams').update({'webhook_url': new_hook}).eq('id', selected_tid).execute()
+                    st.success("Saved!")
+    
+    st.divider()
     
     # 4. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
