@@ -2,7 +2,7 @@ import streamlit as st
 import auth_utils as auth
 
 def show(user, supabase):
-    # --- NO NAVBAR HERE (It's already in app.py) ---
+    # --- HEADER REMOVED (Handled by app.py) ---
     
     st.header("⚙️ Settings")
     st.divider()
