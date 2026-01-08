@@ -545,3 +545,20 @@ def create_stripe_portal_session(user_email):
     except Exception as e:
         print(f"Portal Error: {e}")
         return None
+
+def login_user(email, password, remember=False):
+    if not supabase: return
+    try:
+        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        st.session_state.session = res.session
+        st.session_state.user = res.user
+        
+        # ONLY SAVE COOKIE IF USER CHECKED THE BOX
+        if remember:
+            save_session_to_cookies(res.session) 
+        else:
+            # Ensure no old cookies linger if they didn't check it
+            clear_cookies()
+            
+        st.rerun()
+    except Exception as e: st.error(f"Login failed: {e}")
