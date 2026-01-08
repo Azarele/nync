@@ -2,6 +2,8 @@ import streamlit as st
 import auth_utils as auth
 
 def show(user, supabase):
+    # --- HEADER REMOVED to fix the "Double Dashboard" glitch ---
+    
     st.header("⚙️ Settings")
     st.divider()
 
@@ -11,12 +13,10 @@ def show(user, supabase):
     with c1:
         st.write(f"**Email:** {user.email}")
         
-        # Get Profile Data & Show Badge
+        # Get Profile Data
         profile = auth.get_user_profile(user.id)
         if profile:
             tier = profile.get('subscription_tier', 'free').upper()
-            
-            # Color logic
             color = "#666"
             if tier == "SQUAD": color = "#ff8c00"
             if tier == "GUILD": color = "#1e90ff"
@@ -43,8 +43,6 @@ def show(user, supabase):
             if auth.create_team(user.id, new_team_name):
                 st.success(f"Team '{new_team_name}' created!")
                 st.rerun()
-            else:
-                st.error("Failed to create team.")
 
     with st.expander("Join a Team"):
         code = st.text_input("Enter Invite Code (e.g. NYNC-1234)")
@@ -54,29 +52,9 @@ def show(user, supabase):
                 st.rerun()
             else:
                 st.error("Invalid code.")
-
-    # Team List & Webhooks
-    my_teams = auth.get_user_teams(user.id)
-    if my_teams:
-        st.write("### Integrations")
-        for name, tid in my_teams.items():
-            with st.expander(f"🔌 {name} Settings"):
-                st.write("Connect Nync to your chat app.")
-                
-                t_data = supabase.table('teams').select('webhook_url, invite_code').eq('id', tid).single().execute()
-                current_hook = t_data.data.get('webhook_url', '')
-                invite_code = t_data.data.get('invite_code', 'N/A')
-
-                st.info(f"**Invite Code:** `{invite_code}`")
-
-                new_hook = st.text_input("Discord/Teams Webhook URL", value=current_hook, key=f"wh_{tid}")
-                
-                if st.button("Save Webhook", key=f"btn_{tid}"):
-                    supabase.table('teams').update({'webhook_url': new_hook}).eq('id', tid).execute()
-                    st.success("Saved!")
     
+    # 3. DANGER ZONE
     st.divider()
-    
     if st.checkbox("Show Danger Zone"):
         st.warning("These actions are irreversible.")
         if st.button("Delete My Account", type="primary"):
