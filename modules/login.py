@@ -1,13 +1,11 @@
 import streamlit as st
-import streamlit.components.v1 as components
 import auth_utils as auth
 
 def show():
-    # Use columns to constrain the width
+    # Use columns to constrain the width of the login form
     c1, c2, c3 = st.columns([1, 2, 1])
     
     with c2:
-        # --- LOGO CENTERING ---
         sc1, sc2, sc3 = st.columns([1, 1, 1])
         with sc2:
             try:
@@ -17,53 +15,25 @@ def show():
 
         st.markdown("<h1 style='text-align: center; margin-top: 0px;'>Nync.</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #888;'>Stop maximizing convenience. Start minimizing pain.</p>", unsafe_allow_html=True)
-        st.write("")
+        
+        st.write("") 
 
         tab1, tab2 = st.tabs(["Sign In", "Sign Up"])
         
-        # --- TAB 1: SIGN IN ---
         with tab1:
             with st.form("login_form"):
                 email = st.text_input("Email", key="login_email")
                 password = st.text_input("Password", type="password", key="login_pass")
-                remember_me = st.checkbox("Remember Me", key="login_remember")
                 
                 if st.form_submit_button("Log In", type="primary", use_container_width=True):
-                    auth.login_user(email, password, remember=remember_me)
+                    auth.login_user(email, password)
             
             st.write("---")
             
-            # --- GOOGLE LOGIN (POPUP MODE) ---
             google_url = auth.get_google_url()
             if google_url:
-                # JavaScript to open a popup window
-                # We use components.html to inject real JS
-                js_popup = f"""
-                <script>
-                function openGooglePopup() {{
-                    window.open('{google_url}', 'nync_popup', 'width=500,height=600');
-                }}
-                </script>
-                <div style="text-align: center;">
-                    <button onclick="openGooglePopup()" style="
-                        width: 100%;
-                        background-color: transparent;
-                        color: #4285F4;
-                        padding: 8px;
-                        border-radius: 4px;
-                        border: 1px solid #4285F4;
-                        font-family: sans-serif;
-                        font-weight: 500;
-                        cursor: pointer;
-                        font-size: 16px;
-                    ">
-                        🔵 Sign in with Google
-                    </button>
-                </div>
-                """
-                components.html(js_popup, height=50)
+                st.link_button("🔵 Sign in with Google", google_url, use_container_width=True)
 
-        # --- TAB 2: SIGN UP ---
         with tab2:
             with st.form("signup_form"):
                 email = st.text_input("Email", key="signup_email")
