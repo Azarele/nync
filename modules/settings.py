@@ -2,7 +2,7 @@ import streamlit as st
 import auth_utils as auth
 
 def show(user, supabase):
-    # --- HEADER REMOVED to fix the "Double Dashboard" glitch ---
+    # --- NO NAV CODE HERE (Handled by app.py) ---
     
     st.header("⚙️ Settings")
     st.divider()
@@ -34,27 +34,70 @@ def show(user, supabase):
 
     st.divider()
 
-    # 2. TEAM MANAGEMENT
-    st.subheader("Your Teams")
+    # 2. TEAM MANAGEMENT (Create / Join)
+    st.subheader("Team Management")
+    c_create, c_join = st.columns(2)
     
-    with st.expander("Create a New Team"):
-        new_team_name = st.text_input("Team Name")
-        if st.button("Create Team"):
-            if auth.create_team(user.id, new_team_name):
-                st.success(f"Team '{new_team_name}' created!")
-                st.rerun()
+    with c_create:
+        with st.expander("Create a New Team"):
+            new_team_name = st.text_input("Team Name")
+            if st.button("Create Team"):
+                if auth.create_team(user.id, new_team_name):
+                    st.success(f"Team '{new_team_name}' created!")
+                    st.rerun()
 
-    with st.expander("Join a Team"):
-        code = st.text_input("Enter Invite Code (e.g. NYNC-1234)")
-        if st.button("Join"):
-            if auth.join_team_by_code(user.id, code):
-                st.success("Joined team successfully!")
-                st.rerun()
-            else:
-                st.error("Invalid code.")
-    
-    # 3. DANGER ZONE
+    with c_join:
+        with st.expander("Join a Team"):
+            code = st.text_input("Enter Invite Code")
+            if st.button("Join"):
+                if auth.join_team_by_code(user.id, code):
+                    st.success("Joined team successfully!")
+                    st.rerun()
+                else:
+                    st.error("Invalid code.")
+
     st.divider()
+
+    # 3. MY TEAMS & INVITE CODES (Restored)
+    st.subheader("My Teams")
+    
+    my_teams = auth.get_user_teams(user.id)
+    
+    if not my_teams:
+        st.info("You are not in any teams yet.")
+    else:
+        for name, tid in my_teams.items():
+            # Container for each team
+            with st.container():
+                st.markdown(f"#### 🛡️ {name}")
+                
+                # Fetch invite code and webhook for this team
+                try:
+                    t_data = supabase.table('teams').select('invite_code, webhook_url').eq('id', tid).single().execute()
+                    invite_code = t_data.data.get('invite_code', 'N/A')
+                    webhook = t_data.data.get('webhook_url', '')
+                except:
+                    invite_code = "Error"
+                    webhook = ""
+
+                # Layout: Invite Code on Left, Settings on Right
+                c_code, c_settings = st.columns([1, 1.5])
+                
+                with c_code:
+                    st.caption("Invite Code")
+                    st.code(invite_code, language=None)
+                
+                with c_settings:
+                    with st.expander("🔌 Webhook Settings"):
+                        st.caption("Send notifications to Discord/Teams")
+                        new_hook = st.text_input("Webhook URL", value=webhook, key=f"wh_{tid}")
+                        if st.button("Save", key=f"save_{tid}"):
+                            supabase.table('teams').update({'webhook_url': new_hook}).eq('id', tid).execute()
+                            st.success("Saved!")
+                
+                st.divider()
+    
+    # 4. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
         st.warning("These actions are irreversible.")
         if st.button("Delete My Account", type="primary"):
