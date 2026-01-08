@@ -36,71 +36,60 @@ st.markdown("""
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
-if 'logged_out' not in st.session_state: st.session_state.logged_out = False
 
-# --- CRITICAL FIX: RESTORE SESSION ONCE ---
-# Only check cookies if we are NOT logged in yet AND we haven't just logged out.
-if not st.session_state.user and not st.session_state.logged_out:
-    auth.restore_session_from_cookies()
-
-# --- AUTH & CALLBACK LOGIC ---
+# 3. GLOBAL QUERY PARAMS (Handle Redirects)
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
 
 if "invite" in st.query_params: st.session_state.pending_invite = st.query_params["invite"]
 
-# --- STRIPE CALLBACK HANDLER ---
-if "stripe_session_id" in st.query_params:
-    if st.session_state.user:
-        price_id = auth.verify_stripe_payment(st.query_params["stripe_session_id"])
-        if price_id:
-            new_tier = "paid" 
-            if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
-            elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
-            elif price_id == "price_1SmmB0IlTLkLyuiz6xySQvqd": new_tier = "empire"
-            auth.upgrade_user_tier(st.session_state.user.id, new_tier)
-            st.toast("🎉 Plan Updated!")
-            time.sleep(2)
-            st.query_params.clear()
-            st.rerun()
+# --- STRIPE CALLBACK ---
+if "stripe_session_id" in st.query_params and st.session_state.user:
+    price_id = auth.verify_stripe_payment(st.query_params["stripe_session_id"])
+    if price_id:
+        new_tier = "paid" 
+        if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
+        elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
+        elif price_id == "price_1SmmB0IlTLkLyuiz6xySQvqd": new_tier = "empire"
+        auth.upgrade_user_tier(st.session_state.user.id, new_tier)
+        st.toast("🎉 Plan Updated!")
+        time.sleep(2)
+    st.query_params.clear()
+    st.rerun()
 
-# --- MICROSOFT CALLBACK HANDLER ---
+# --- MICROSOFT / GOOGLE CALLBACK ---
+# If code exists, try to exchange it for a session
 if "code" in st.query_params:
     code = st.query_params["code"]
     state = st.query_params.get("state", None)
+    
+    # MICROSOFT OUTLOOK
     if state == "microsoft_connect" and st.session_state.session:
         if auth.handle_microsoft_callback(code, st.session_state.user.id):
             st.toast("✅ Outlook Connected!")
         st.query_params.clear()
         st.rerun()
+    
+    # GOOGLE AUTH (Or Supabase Magic Link)
     elif not state: 
         try:
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
-            st.session_state.session = res.session
-            st.session_state.user = res.user
-            auth.save_session_to_cookies(res.session) # Implicit remember for OAuth
+            if res.session:
+                st.session_state.session = res.session
+                st.session_state.user = res.user
+                st.query_params.clear()
+                st.rerun()
+        except: 
             st.query_params.clear()
-            st.rerun()
-        except: st.query_params.clear()
 
+# 4. ROUTER
 # B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
-    
-    # --- AUTO-RELOAD CHECKER ---
-    # If the user logs in via the popup, this silent check will detect the new cookie
-    # and reload the main page automatically.
-    # We delay slightly to avoid hammering the cookie manager
-    time.sleep(2) 
-    if auth.restore_session_from_cookies():
-        st.rerun()
 
 # C: DASHBOARD
 else:
-    # Reset the logout flag since we are now validly logged in
-    st.session_state.logged_out = False
-
     if 'pending_invite' in st.session_state:
         auth.join_team_by_code(st.session_state.user.id, st.session_state.pending_invite)
         del st.session_state.pending_invite
@@ -132,14 +121,9 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
-            # 1. Sign out from Supabase
             auth.supabase.auth.sign_out()
-            # 2. Clear cookies explicitly
-            auth.clear_cookies()
-            # 3. Set flags to prevent auto-reload loop
             st.session_state.session = None
             st.session_state.user = None
-            st.session_state.logged_out = True 
             st.rerun()
 
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
@@ -175,10 +159,10 @@ else:
             else:
                 roster = auth.get_team_roster(st.session_state.active_team_id)
                 t1, t2 = st.tabs(["Pain Board", "Scheduler"])
+                # Note: Pass team_id to martyr_board, user/roster to scheduler
                 with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
 
     elif nav == "Settings": settings.show(st.session_state.user, auth.supabase)
     elif nav == "Pricing": pricing.show()
     elif nav == "Legal": legal.show()
-
