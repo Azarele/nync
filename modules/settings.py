@@ -1,99 +1,84 @@
 import streamlit as st
-import pytz
 import auth_utils as auth
 
 def show(user, supabase):
+    # --- NO NAVBAR HERE (It's already in app.py) ---
+    
     st.header("⚙️ Settings")
-
-    # fetch profile
-    profile = auth.get_user_profile(user.id)
-    if not profile:
-        st.error("Could not load profile")
-        return
-
-    # --- SUBSCRIPTION SECTION ---
-    with st.expander("💳 Subscription & Billing", expanded=True):
-        tier = profile.get('subscription_tier', 'free').capitalize()
-        
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            st.write(f"**Current Plan:** {tier}")
-            if tier.lower() == 'free':
-                st.info("You are on the Free tier.")
-            else:
-                st.success(f"✅ You are an active {tier} member.")
-        
-        with c2:
-            if tier.lower() != 'free':
-                if st.button("Manage / Cancel", help="Open Stripe Billing Portal"):
-                    url = auth.create_stripe_portal_session(user.email)
-                    if url:
-                        st.link_button("Go to Billing Portal", url, type="primary")
-                    else:
-                        st.error("Could not find billing history.")
-            else:
-                if st.button("Upgrade Plan"):
-                    st.session_state.nav = "Pricing"
-                    st.rerun()
-
     st.divider()
 
-    # --- PROFILE SECTION ---
-    with st.expander("👤 User Profile", expanded=True):
+    # 1. PROFILE SECTION
+    st.subheader("Profile")
+    c1, c2 = st.columns([1, 2])
+    with c1:
         st.write(f"**Email:** {user.email}")
         
-        current_tz = profile.get('default_timezone', 'UTC')
-        all_timezones = pytz.common_timezones
-        
-        try:
-            idx = all_timezones.index(current_tz)
-        except:
-            idx = all_timezones.index('UTC')
-            
-        new_tz = st.selectbox("Default Timezone", all_timezones, index=idx)
-        
-        if st.button("Save Profile"):
-            auth.update_user_timezone(user.id, new_tz)
-            st.success("✅ Saved!")
+        # Get Profile Data
+        profile = auth.get_user_profile(user.id)
+        if profile:
+            current_tier = profile.get('subscription_tier', 'free').title()
+            st.write(f"**Current Plan:** {current_tier}")
+    
+    with c2:
+        if st.button("Manage Subscription"):
+            portal_url = auth.create_stripe_portal_session(user.email)
+            if portal_url:
+                st.link_button("Billing Portal", portal_url)
+            else:
+                st.info("No billing history found.")
 
-    # --- TEAM SECTION ---
     st.divider()
-    st.subheader("🏢 Your Teams")
 
-    # 1. Create Team
-    with st.form("create_team_form"):
-        new_team_name = st.text_input("Create a New Team", placeholder="e.g. Marketing Squad")
-        if st.form_submit_button("Create Team"):
-            if new_team_name:
-                if auth.create_team(user.id, new_team_name):
-                    st.success(f"Team '{new_team_name}' created!")
-                    st.rerun()
-                else:
-                    st.error("Failed to create team.")
+    # 2. TEAM MANAGEMENT
+    st.subheader("Your Teams")
+    
+    # Create Team
+    with st.expander("Create a New Team"):
+        new_team_name = st.text_input("Team Name")
+        if st.button("Create Team"):
+            if auth.create_team(user.id, new_team_name):
+                st.success(f"Team '{new_team_name}' created!")
+                st.rerun()
+            else:
+                st.error("Failed to create team.")
 
-    # 2. Join Team
-    with st.form("join_team_form"):
-        code = st.text_input("Join Team by Code", placeholder="NYNC-XXXX")
-        if st.form_submit_button("Join Team"):
+    # Join Team
+    with st.expander("Join a Team"):
+        code = st.text_input("Enter Invite Code (e.g. NYNC-1234)")
+        if st.button("Join"):
             if auth.join_team_by_code(user.id, code):
-                st.success("Joined team!")
+                st.success("Joined team successfully!")
                 st.rerun()
             else:
                 st.error("Invalid code.")
 
-    # 3. List Teams
+    # Team List & Webhooks
     my_teams = auth.get_user_teams(user.id)
     if my_teams:
-        st.write("Twitch Switch:")
+        st.write("### Integrations")
         for name, tid in my_teams.items():
-            if st.button(f"➡️ Switch to: {name}", key=f"switch_{tid}"):
-                st.session_state.active_team = name
-                st.session_state.active_team_id = tid
-                st.rerun()
+            with st.expander(f"🔌 {name} Settings"):
+                st.write("Connect Nync to your chat app to send poll notifications.")
+                
+                # Fetch current webhook
+                t_data = supabase.table('teams').select('webhook_url, invite_code').eq('id', tid).single().execute()
+                current_hook = t_data.data.get('webhook_url', '')
+                invite_code = t_data.data.get('invite_code', 'N/A')
 
+                st.info(f"**Invite Code:** `{invite_code}`")
+
+                new_hook = st.text_input("Discord/Teams Webhook URL", value=current_hook, key=f"wh_{tid}")
+                
+                if st.button("Save Webhook", key=f"btn_{tid}"):
+                    supabase.table('teams').update({'webhook_url': new_hook}).eq('id', tid).execute()
+                    st.success("Saved!")
+    
     st.divider()
-    with st.expander("Danger Zone"):
-        if st.button("❌ Delete Account"):
+    
+    # 3. DANGER ZONE
+    if st.checkbox("Show Danger Zone"):
+        st.warning("These actions are irreversible.")
+        if st.button("Delete My Account", type="primary"):
             if auth.delete_user_data(user.id):
                 auth.supabase.auth.sign_out()
                 st.session_state.session = None
