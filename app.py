@@ -76,13 +76,19 @@ if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 
+# --- CRITICAL FIX: RESTORE SESSION ONCE ---
+# We check cookies exactly one time at the start of the script.
+# This prevents the "DuplicateElementKey" error.
+if not st.session_state.session:
+    auth.restore_session_from_cookies()
+
 # --- VOTE STASHING LOGIC ---
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params:
         st.session_state.pending_vote_idx = st.query_params["idx"]
 
-# 3. AUTH LOGIC
+# 3. AUTH & CALLBACK LOGIC
 if "invite" in st.query_params: st.session_state.pending_invite = st.query_params["invite"]
 
 # --- STRIPE CALLBACK HANDLER ---
@@ -90,20 +96,18 @@ if "stripe_session_id" in st.query_params:
     session_id = st.query_params["stripe_session_id"]
     st.toast("🔄 Verifying Payment...")
     
-    price_id = auth.verify_stripe_payment(session_id)
-    
-    if price_id:
-        new_tier = "paid" 
+    # Note: We already attempted restore above, so we just check user now
+    if st.session_state.user:
+        price_id = auth.verify_stripe_payment(session_id)
         
-        # YOUR REAL PRICE IDs
-        if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
-        elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
-        elif price_id == "price_1SmmB0IlTLkLyuiz6xySQvqd": new_tier = "empire"
-        
-        if not st.session_state.user:
-             auth.restore_session_from_cookies()
-
-        if st.session_state.user:
+        if price_id:
+            # MAP PRICE IDs TO TIER NAMES
+            # Replace these with your actual Stripe Price IDs
+            new_tier = "paid" 
+            if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
+            elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
+            elif price_id == "price_1SmmB0IlTLkLyuiz6xySQvqd": new_tier = "empire"
+            
             if auth.upgrade_user_tier(st.session_state.user.id, new_tier):
                 st.balloons()
                 st.success(f"🎉 Upgrade Successful! You are now on the {new_tier.title()} plan.")
@@ -112,21 +116,15 @@ if "stripe_session_id" in st.query_params:
                 st.rerun()
             else:
                 st.error("Payment verified, but database update failed.")
-        else:
-             st.warning("Payment successful, but lost login session. Please log in again to see changes.")
     else:
-        st.error("❌ Payment verification failed.")
-        st.query_params.clear()
+         st.warning("Payment successful, but lost login session. Please log in again to see changes.")
 
-
+# --- MICROSOFT CALLBACK HANDLER ---
 if "code" in st.query_params:
     code = st.query_params["code"]
     state = st.query_params.get("state", None)
 
     if state == "microsoft_connect":
-        if not st.session_state.session:
-            auth.restore_session_from_cookies()
-            
         if st.session_state.session:
             st.toast("🔄 Finishing Outlook connection...")
             if auth.handle_microsoft_callback(code, st.session_state.user.id):
@@ -152,9 +150,6 @@ if "code" in st.query_params:
             st.rerun()
         except: st.query_params.clear()
 
-if not st.session_state.session and "code" not in st.query_params:
-    auth.restore_session_from_cookies()
-
 # --- VOTE RESTORATION LOGIC ---
 if st.session_state.session and "pending_vote_id" in st.session_state:
     params = {"vote": st.session_state.pending_vote_id}
@@ -167,7 +162,7 @@ if st.session_state.session and "pending_vote_id" in st.session_state:
     st.query_params.update(params)
     st.rerun()
 
-# B: LOGIN PAGE (If not logged in)
+# B: LOGIN PAGE (If still not logged in)
 if not st.session_state.session:
     login.show()
 
