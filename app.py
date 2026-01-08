@@ -140,6 +140,7 @@ else:
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
+            # --- SUBSCRIPTION BADGE ---
             profile = auth.get_user_profile(st.session_state.user.id)
             user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
             
