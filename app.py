@@ -58,31 +58,25 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
     st.query_params.clear()
     st.rerun()
 
-# --- AUTH CALLBACKS (Google / Microsoft) ---
+# --- AUTH CALLBACKS ---
 if "code" in st.query_params:
     code = st.query_params["code"]
     state = st.query_params.get("state", None)
     
-    # CASE A: Microsoft Outlook (Already Logged In)
     if state == "microsoft_connect" and st.session_state.session:
         if auth.handle_microsoft_callback(code, st.session_state.user.id):
             st.toast("✅ Outlook Connected!")
         st.query_params.clear()
         st.rerun()
-    
-    # CASE B: Google Login (Not Logged In Yet)
     elif not state: 
         try:
-            # Exchange code for session
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
             if res.session:
                 st.session_state.session = res.session
                 st.session_state.user = res.user
                 st.query_params.clear()
                 st.rerun()
-        except Exception as e: 
-            # If code is invalid or expired, just clear it and show login
-            st.query_params.clear()
+        except: st.query_params.clear()
 
 # 4. ROUTER
 # B: LOGIN PAGE
@@ -142,7 +136,6 @@ else:
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
-            # --- SUBSCRIPTION BADGE ---
             profile = auth.get_user_profile(st.session_state.user.id)
             user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
             
