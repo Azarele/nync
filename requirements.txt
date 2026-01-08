@@ -1,0 +1,8 @@
+streamlit
+supabase
+pandas
+plotly
+pytz
+requests
+extra-streamlit-components
+openai
