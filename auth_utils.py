@@ -257,7 +257,7 @@ def send_poll_card(webhook_url, poll_id, slots, date_obj):
     Sends 'Smart Links' that pre-select the voting option.
     Uses ?vote={poll_id}&idx={index}
     """
-    base_url = "http://localhost:8501" # In prod, this would be https://nync.app
+    base_url = "https://nyncapp.streamlit.app/" # In prod, this would be https://nync.app
     
     is_discord = "discord" in webhook_url.lower()
     
@@ -427,7 +427,7 @@ def check_team_status(team_id):
 
 def get_google_url():
     try:
-        base_url = "http://localhost:8501"
+        base_url = "https://nyncapp.streamlit.app/"
         params = []
         if "invite" in st.query_params: params.append(f"invite={st.query_params['invite']}")
         if "code" in st.query_params and st.query_params.get("state") == "microsoft_connect":
@@ -447,7 +447,7 @@ def create_stripe_checkout(user_email, price_id):
     if "stripe" not in st.secrets: return None
     
     stripe.api_key = st.secrets["stripe"]["secret_key"]
-    base_url = "http://localhost:8501" # Change to https://nync.app for production
+    base_url = "https://nyncapp.streamlit.app/" # Change to https://nync.app for production
     
     try:
         session = stripe.checkout.Session.create(
@@ -524,7 +524,7 @@ def create_stripe_portal_session(user_email):
     """
     if "stripe" not in st.secrets: return None
     stripe.api_key = st.secrets["stripe"]["secret_key"]
-    base_url = "http://localhost:8501" # Change to https://nync.app for production
+    base_url = "https://nyncapp.streamlit.app/" # Change to https://nync.app for production
 
     try:
         # 1. Search for the customer by email
@@ -543,4 +543,5 @@ def create_stripe_portal_session(user_email):
         return session.url
     except Exception as e:
         print(f"Portal Error: {e}")
+
         return None
