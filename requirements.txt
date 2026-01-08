@@ -1,8 +1,8 @@
 streamlit
 supabase
-pandas
-plotly
-pytz
-requests
+stripe
 extra-streamlit-components
+requests
+python-dateutil
+pytz
 openai
