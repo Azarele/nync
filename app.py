@@ -1,73 +1,34 @@
 import streamlit as st
 import time
 import base64
-import html  # Added for Security (XSS)
+import html
 import auth_utils as auth
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote
 
 # 1. SETUP
-favicon = "nync_favicon.png" 
-st.set_page_config(page_title="Nync", page_icon=favicon, layout="wide", initial_sidebar_state="collapsed")
+try:
+    st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
+except:
+    st.set_page_config(page_title="Nync", page_icon="⚡", layout="wide", initial_sidebar_state="collapsed")
 
-# --- CSS: UI CLEANUP & STYLING ---
+# --- CSS STYLES ---
 st.markdown("""
 <style>
-    /* Main Background */
     .stApp { background-color: #000000; color: white; } 
-    
-    /* Hide Sidebar Elements */
     [data-testid="stSidebar"] { display: none; }
     [data-testid="stSidebarCollapsedControl"] { display: none; }
-
-    /* --- UI POLISH (THE FIX) --- */
-    
-    /* 1. NUCLEAR OPTION: Hide Fullscreen Buttons on Images */
-    button[title="View fullscreen"], 
-    [data-testid="StyledFullScreenButton"],
-    [data-testid="stImage"] button {
-        display: none !important;
-        visibility: hidden !important;
-        pointer-events: none !important;
+    button[title="View fullscreen"], [data-testid="StyledFullScreenButton"], [data-testid="stImage"] button {
+        display: none !important; visibility: hidden !important; pointer-events: none !important;
     }
-    
-    /* 2. Hide the Anchor Link icons next to headers */
-    [data-testid="stHeaderAction"] {
-        display: none !important;
-        visibility: hidden !important;
-    }
-
-    /* --- NAV BUTTON STYLES --- */
+    [data-testid="stHeaderAction"] { display: none !important; }
     div.stButton > button {
-        background-color: transparent;
-        color: #FFFFFF;
-        border: 1px solid #FFFFFF;
-        border-radius: 4px;
-        font-weight: 500;
-        font-size: 14px;
-        transition: all 0.2s ease;
-        padding: 6px 16px;
-        height: auto;
-        margin-top: 4px;
+        background-color: transparent; color: #FFFFFF; border: 1px solid #FFFFFF;
+        border-radius: 4px; font-weight: 500; font-size: 14px; transition: all 0.2s ease;
+        padding: 6px 16px; height: auto; margin-top: 4px;
     }
-    div.stButton > button:hover {
-        color: #000000;
-        background-color: #FFFFFF;
-        border-color: #FFFFFF;
-    }
-    div.stButton > button:focus {
-        color: #FFFFFF;
-        background-color: transparent;
-        border-color: #FFFFFF;
-        box-shadow: none;
-    }
-    button[key="top_logout"] {
-        color: #ff4b4b !important;
-        border-color: #ff4b4b !important;
-    }
-    button[key="top_logout"]:hover {
-        background-color: #ff4b4b !important;
-        color: white !important;
-    }
+    div.stButton > button:hover { color: #000000; background-color: #FFFFFF; border-color: #FFFFFF; }
+    button[key="top_logout"] { color: #ff4b4b !important; border-color: #ff4b4b !important; }
+    button[key="top_logout"]:hover { background-color: #ff4b4b !important; color: white !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -75,129 +36,82 @@ st.markdown("""
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
+if 'logged_out' not in st.session_state: st.session_state.logged_out = False
 
 # --- CRITICAL FIX: RESTORE SESSION ONCE ---
-# We check cookies exactly one time at the start of the script.
-# This prevents the "DuplicateElementKey" error.
-if not st.session_state.session:
+# Only check cookies if we are NOT logged in yet AND we haven't just logged out.
+if not st.session_state.user and not st.session_state.logged_out:
     auth.restore_session_from_cookies()
 
-# --- VOTE STASHING LOGIC ---
+# --- AUTH & CALLBACK LOGIC ---
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
-    if "idx" in st.query_params:
-        st.session_state.pending_vote_idx = st.query_params["idx"]
+    if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
 
-# 3. AUTH & CALLBACK LOGIC
 if "invite" in st.query_params: st.session_state.pending_invite = st.query_params["invite"]
 
 # --- STRIPE CALLBACK HANDLER ---
 if "stripe_session_id" in st.query_params:
-    session_id = st.query_params["stripe_session_id"]
-    st.toast("🔄 Verifying Payment...")
-    
-    # Note: We already attempted restore above, so we just check user now
     if st.session_state.user:
-        price_id = auth.verify_stripe_payment(session_id)
-        
+        price_id = auth.verify_stripe_payment(st.query_params["stripe_session_id"])
         if price_id:
-            # MAP PRICE IDs TO TIER NAMES
-            # Replace these with your actual Stripe Price IDs
             new_tier = "paid" 
             if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
             elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
             elif price_id == "price_1SmmB0IlTLkLyuiz6xySQvqd": new_tier = "empire"
-            
-            if auth.upgrade_user_tier(st.session_state.user.id, new_tier):
-                st.balloons()
-                st.success(f"🎉 Upgrade Successful! You are now on the {new_tier.title()} plan.")
-                time.sleep(3)
-                st.query_params.clear()
-                st.rerun()
-            else:
-                st.error("Payment verified, but database update failed.")
-    else:
-         st.warning("Payment successful, but lost login session. Please log in again to see changes.")
+            auth.upgrade_user_tier(st.session_state.user.id, new_tier)
+            st.toast("🎉 Plan Updated!")
+            time.sleep(2)
+            st.query_params.clear()
+            st.rerun()
 
 # --- MICROSOFT CALLBACK HANDLER ---
 if "code" in st.query_params:
     code = st.query_params["code"]
     state = st.query_params.get("state", None)
-
-    if state == "microsoft_connect":
-        if st.session_state.session:
-            st.toast("🔄 Finishing Outlook connection...")
-            if auth.handle_microsoft_callback(code, st.session_state.user.id):
-                st.success("✅ Outlook Connected!")
-                time.sleep(1)
-            else: st.error("❌ Connection failed.")
-            st.query_params.clear()
-            st.rerun()
-
+    if state == "microsoft_connect" and st.session_state.session:
+        if auth.handle_microsoft_callback(code, st.session_state.user.id):
+            st.toast("✅ Outlook Connected!")
+        st.query_params.clear()
+        st.rerun()
     elif not state: 
         try:
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
             st.session_state.session = res.session
             st.session_state.user = res.user
-            auth.save_session_to_cookies(res.session)
-            
-            if "ms_stash" in st.query_params:
-                st.toast("🔄 Resuming Outlook Connection...")
-                if auth.handle_microsoft_callback(st.query_params["ms_stash"], st.session_state.user.id):
-                    st.success("✅ Outlook Connected!")
-                    time.sleep(1)
+            auth.save_session_to_cookies(res.session) # Implicit remember for OAuth
             st.query_params.clear()
             st.rerun()
         except: st.query_params.clear()
 
-# --- VOTE RESTORATION LOGIC ---
-if st.session_state.session and "pending_vote_id" in st.session_state:
-    params = {"vote": st.session_state.pending_vote_id}
-    if "pending_vote_idx" in st.session_state:
-        params["idx"] = st.session_state.pending_vote_idx
-    
-    del st.session_state.pending_vote_id
-    if "pending_vote_idx" in st.session_state: del st.session_state.pending_vote_idx
-    
-    st.query_params.update(params)
-    st.rerun()
-
-# B: LOGIN PAGE (If still not logged in)
+# B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
 
-# C: DASHBOARD (Logged In)
+# C: DASHBOARD
 else:
-    # 1. Handle Pending Invites
+    # Reset the logout flag since we are now validly logged in
+    st.session_state.logged_out = False
+
     if 'pending_invite' in st.session_state:
         auth.join_team_by_code(st.session_state.user.id, st.session_state.pending_invite)
         del st.session_state.pending_invite
-        st.query_params.clear()
         st.rerun()
 
-    # 2. Check for Voting (Strict Mode: Must be logged in)
     if "vote" in st.query_params:
         vote.show(st.query_params["vote"], auth.supabase)
-        st.stop() # Hide the rest of the dashboard so they focus on voting
+        st.stop()
 
     # --- TOP NAV BAR ---
     c_logo, c_dash, c_set, c_price, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 3, 1.2], gap="small")
     
     with c_logo:
-        # CLICKABLE LOGO LOGIC
         try:
             with open("nync_marketing.png", "rb") as f:
                 img_data = base64.b64encode(f.read()).decode()
-            
-            st.markdown(f"""
-                <a href="/" target="_self" style="text-decoration: none;">
-                    <img src="data:image/png;base64,{img_data}" width="80" style="margin-top: 5px; cursor: pointer;">
-                </a>
-            """, unsafe_allow_html=True)
+            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='80' style='margin-top:5px;cursor:pointer;'></a>", unsafe_allow_html=True)
         except:
-            if st.button("⚡ Nync.", type="secondary"): 
-                st.session_state.nav = "Dashboard"
-                st.rerun()
+            if st.button("⚡ Nync.", type="secondary"): st.session_state.nav = "Dashboard"; st.rerun()
 
     with c_dash:
         if st.button("Dashboard", use_container_width=True): st.session_state.nav = "Dashboard"
@@ -210,9 +124,14 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
+            # 1. Sign out from Supabase
             auth.supabase.auth.sign_out()
+            # 2. Clear cookies explicitly
             auth.clear_cookies()
+            # 3. Set flags to prevent auto-reload loop
             st.session_state.session = None
+            st.session_state.user = None
+            st.session_state.logged_out = True 
             st.rerun()
 
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
@@ -221,47 +140,36 @@ else:
 
     if nav == "Dashboard":
         my_teams = auth.get_user_teams(st.session_state.user.id)
-        if 'active_team' not in st.session_state or not st.session_state.active_team or st.session_state.active_team not in my_teams:
-            if my_teams:
-                first = list(my_teams.keys())[0]
-                st.session_state.active_team = first
-                st.session_state.active_team_id = my_teams[first]
-                st.rerun()
-            else: st.session_state.active_team = None
-
-        if not st.session_state.active_team:
+        if not my_teams:
             st.info("👈 Create a Team in Settings.")
         else:
+            if 'active_team' not in st.session_state or st.session_state.active_team not in my_teams:
+                st.session_state.active_team = list(my_teams.keys())[0]
+            
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
-            # --- TIER BADGE & XSS PROTECTION ---
-            profile = auth.get_user_profile(st.session_state.user.id)
-            user_tier = profile.get('subscription_tier', 'free').upper()
-            tier_color = "grey"
-            if user_tier == "SQUAD": tier_color = "orange"
-            if user_tier == "GUILD": tier_color = "blue"
-            if user_tier == "EMPIRE": tier_color = "violet"
-            
-            # Sanitize inputs to prevent XSS attacks
-            safe_team_name = html.escape(st.session_state.active_team)
-            safe_tier_name = html.escape(user_tier)
+            # Header with Team Selector
+            safe_team = html.escape(st.session_state.active_team)
+            if len(my_teams) > 1:
+                c1, c2 = st.columns([3, 1])
+                c1.markdown(f"### {safe_team}")
+                new = c2.selectbox("Switch Team", list(my_teams.keys()), label_visibility="collapsed")
+                if new != st.session_state.active_team:
+                    st.session_state.active_team = new
+                    st.rerun()
+            else:
+                st.markdown(f"### {safe_team}")
 
-            st.markdown(f"### {safe_team_name} <span style='background-color:#333; color:{tier_color}; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle;'>{safe_tier_name}</span>", unsafe_allow_html=True)
-            
             if status == 'locked':
-                st.title("🔒 Team Locked")
-                st.error("Your 14-day trial has ended.")
-                st.button("💎 Upgrade Now", type="primary")
+                st.error("Team Locked (Trial Expired)")
+                if st.button("Upgrade"): st.session_state.nav = "Pricing"; st.rerun()
             else:
                 roster = auth.get_team_roster(st.session_state.active_team_id)
                 t1, t2 = st.tabs(["Pain Board", "Scheduler"])
-                with t1: martyr_board.show(auth.supabase, st.session_state.user, roster)
+                with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
 
-    elif nav == "Settings":
-        settings.show(st.session_state.user, auth.supabase)
-    elif nav == "Pricing":
-        pricing.show()
-    elif nav == "Legal":
-        legal.show()
+    elif nav == "Settings": settings.show(st.session_state.user, auth.supabase)
+    elif nav == "Pricing": pricing.show()
+    elif nav == "Legal": legal.show()
