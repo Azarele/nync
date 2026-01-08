@@ -1,12 +1,8 @@
 import streamlit as st
-import secrets
-import string
 import stripe
-import time  # Standard time module (for sleep)
-import datetime as dt  # Renamed to 'dt' to prevent conflicts
 import requests
-import extra_streamlit_components as stx
-from urllib.parse import quote
+import datetime as dt
+from dateutil import parser
 from supabase import create_client
 
 # --- DATABASE CONNECTION ---
@@ -21,45 +17,32 @@ def get_supabase():
 
 supabase = get_supabase()
 
-# --- COOKIE MANAGER ---
-def get_cookie_manager():
-    if 'cookie_manager' in st.session_state:
-        return st.session_state.cookie_manager
-    cm = stx.CookieManager(key="nync_cookies")
-    st.session_state.cookie_manager = cm
-    return cm
+# --- AUTH HELPER FUNCTIONS (No Cookies) ---
+def login_user(email, password):
+    if not supabase: return
+    try:
+        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        st.session_state.session = res.session
+        st.session_state.user = res.user
+        st.rerun()
+    except Exception as e: st.error(f"Login failed: {e}")
 
-def save_session_to_cookies(session):
-    cookie_manager = get_cookie_manager()
-    expires = dt.datetime.now() + dt.timedelta(days=30)
-    cookie_manager.set('sb_access_token', session.access_token, key="set_at", expires_at=expires)
-    cookie_manager.set('sb_refresh_token', session.refresh_token, key="set_rt", expires_at=expires)
+def signup_user(email, password):
+    if not supabase: return
+    try:
+        res = supabase.auth.sign_up({"email": email, "password": password})
+        if res.session:
+            st.session_state.session = res.session
+            st.session_state.user = res.user
+            st.rerun()
+        else: st.info("Check email to confirm.")
+    except Exception as e: st.error(f"Sign up failed: {e}")
 
-def restore_session_from_cookies():
-    cookie_manager = get_cookie_manager()
-    time.sleep(0.1) 
-    cookies = cookie_manager.get_all()
-    access_token = cookies.get('sb_access_token')
-    refresh_token = cookies.get('sb_refresh_token')
-    
-    if access_token and refresh_token:
-        try:
-            res = supabase.auth.set_session(access_token, refresh_token)
-            if res.session:
-                st.session_state.session = res.session
-                st.session_state.user = res.user
-                return True
-        except:
-            clear_cookies()
-            return False
-    return False
+def get_user_profile(user_id):
+    try: return supabase.table('profiles').select('*').eq('id', user_id).single().execute().data
+    except: return None
 
-def clear_cookies():
-    cookie_manager = get_cookie_manager() 
-    cookie_manager.delete('sb_access_token', key="del_access")
-    cookie_manager.delete('sb_refresh_token', key="del_refresh")
-
-# --- AUTH: MICROSOFT ---
+# --- MICROSOFT AUTH ---
 def get_microsoft_url():
     try:
         client_id = st.secrets["microsoft"]["client_id"]
@@ -98,7 +81,7 @@ def handle_microsoft_callback(code, user_id):
         return True
     except: return False
 
-# --- OUTLOOK ---
+# --- OUTLOOK CALENDAR ---
 def refresh_outlook_token(user_id):
     if not supabase: return None
     try:
@@ -150,7 +133,6 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
         events = r.json().get('value', [])
         blocked_hours = []
         for e in events:
-            # Usage: dt.datetime.fromisoformat
             start = dt.datetime.fromisoformat(e['start']['dateTime'].replace('Z', '+00:00'))
             end = dt.datetime.fromisoformat(e['end']['dateTime'].replace('Z', '+00:00'))
             curr = start
@@ -161,23 +143,15 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
     except: return []
 
 def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
-    """Creates an event in the user's Outlook/Teams calendar."""
-    if not supabase: 
-        print("❌ Booking Error: No Supabase connection")
-        return False
-        
+    if not supabase: return False
     try:
         token = refresh_outlook_token(user_id) 
-        if not token: 
-            print("❌ Booking Error: Could not refresh Outlook token")
-            return False
+        if not token: return False
 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
-        attendee_list = []
-        for email in attendees:
-            attendee_list.append({"emailAddress": {"address": email}, "type": "required"})
+        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees]
 
         payload = {
             "subject": subject,
@@ -189,19 +163,10 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         }
 
         r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
-        
-        if r.status_code in [201, 200]:
-            return True
-        else:
-            # --- DIAGNOSTIC PRINT ---
-            print(f"❌ OUTLOOK API ERROR ({r.status_code}): {r.text}")
-            return False
-            
-    except Exception as e: 
-        print(f"❌ Python Error in Booking: {e}")
-        return False
+        return r.status_code in [201, 200]
+    except: return False
 
-# --- STATS & KARMA ---
+# --- STATS & TEAMS ---
 def get_martyr_stats(team_id):
     if not supabase: return []
     try:
@@ -215,133 +180,6 @@ def get_martyr_stats(team_id):
         leaderboard.sort(key=lambda x: x['total_pain'], reverse=True)
         return leaderboard
     except: return []
-
-def get_team_pain_map(team_id):
-    if not supabase: return {}
-    try:
-        resp = supabase.table("pain_ledger").select("user_email, pain_score").eq("team_id", team_id).execute()
-        totals = {}
-        for row in resp.data:
-            e = row['user_email']
-            p = row['pain_score']
-            totals[e] = totals.get(e, 0) + p
-        return totals
-    except: return {}
-
-# --- POLLS ---
-def create_poll(team_id, top_3_slots, target_date):
-    if not supabase: return False
-    try:
-        poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()
-        poll_id = poll.data[0]['id']
-        
-        options = []
-        for slot in top_3_slots:
-            d = dt.datetime.combine(target_date, dt.time(slot['utc_hour'], 0)).replace(tzinfo=None).isoformat()
-            options.append({'poll_id': poll_id, 'slot_time': d, 'pain_score': slot['total_pain']})
-        
-        supabase.table('poll_options').insert(options).execute()
-        
-        t_data = supabase.table('teams').select('webhook_url').eq('id', team_id).single().execute()
-        webhook = t_data.data.get('webhook_url')
-        
-        if webhook:
-            return send_poll_card(webhook, poll_id, top_3_slots, target_date)
-        else: return "No Webhook"
-    except Exception as e:
-        print(f"Poll Creation Error: {e}")
-        return False
-
-def send_poll_card(webhook_url, poll_id, slots, date_obj):
-    """
-    Sends 'Smart Links' that pre-select the voting option.
-    Uses ?vote={poll_id}&idx={index}
-    """
-    base_url = "https://nyncapp.streamlit.app/" # In prod, this would be https://nync.app
-    
-    is_discord = "discord" in webhook_url.lower()
-    
-    # 1. GENERATE LINKS TEXT
-    links_text = ""
-    for idx, s in enumerate(slots):
-        link = f"{base_url}/?vote={poll_id}&idx={idx}"
-        time_display = f"{s['utc_hour']}:00 UTC"
-        
-        if is_discord:
-            links_text += f"⏰ **{time_display}** (+{s['total_pain']} pain) • [Vote for this]({link})\n"
-        else:
-            links_text += f"⏰ **{time_display}** (+{s['total_pain']} pain) • [Vote for this]({link})\n\n"
-
-    # 2. SEND PAYLOAD
-    if is_discord:
-        payload = {
-            "username": "Nync Bot",
-            "avatar_url": "https://emojicdn.elk.sh/⚡",
-            "embeds": [{
-                "title": "⚡ Nync Vote Required",
-                "description": f"**Proposed times for {date_obj}:**\n\n{links_text}",
-                "color": 5763719
-            }]
-        }
-    else:
-        # Teams Adaptive Card
-        payload = {
-            "type": "message",
-            "attachments": [{
-                "contentType": "application/vnd.microsoft.card.adaptive",
-                "content": {
-                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                    "type": "AdaptiveCard",
-                    "version": "1.2",
-                    "body": [
-                        {"type": "TextBlock", "text": "⚡ Nync Vote Required", "weight": "Bolder", "size": "Medium"},
-                        {"type": "TextBlock", "text": f"Proposed times for {date_obj}:", "wrap": True},
-                        {"type": "TextBlock", "text": links_text, "wrap": True}
-                    ]
-                }
-            }]
-        }
-
-    try:
-        r = requests.post(webhook_url, json=payload)
-        if r.status_code in [200, 202, 204]:
-            return True
-        else:
-            print(f"Webhook Failed: {r.text}")
-            return False
-    except Exception as e:
-        print(f"Webhook Error: {e}")
-        return False
-
-# --- HELPERS ---
-def login_user(email, password):
-    if not supabase: return
-    try:
-        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        st.session_state.session = res.session
-        st.session_state.user = res.user
-        save_session_to_cookies(res.session) 
-        st.rerun()
-    except Exception as e: st.error(f"Login failed: {e}")
-
-def signup_user(email, password):
-    if not supabase: return
-    try:
-        res = supabase.auth.sign_up({"email": email, "password": password})
-        if res.session:
-            st.session_state.session = res.session
-            st.session_state.user = res.user
-            save_session_to_cookies(res.session) 
-            st.rerun()
-        else: st.info("Check email to confirm.")
-    except Exception as e: st.error(f"Sign up failed: {e}")
-
-def get_user_profile(user_id):
-    try: return supabase.table('profiles').select('*').eq('id', user_id).single().execute().data
-    except: return None
-
-def update_user_timezone(user_id, tz):
-    supabase.table('profiles').update({'default_timezone': tz}).eq('id', user_id).execute()
 
 def get_user_teams(user_id):
     try:
@@ -362,54 +200,6 @@ def get_team_roster(team_id):
         return roster
     except: return []
 
-def create_team(user_id, name):
-    code = "NYNC-" + ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
-    try:
-        t = supabase.table('teams').insert({'name': name, 'invite_code': code, 'created_by': user_id}).execute()
-        if not t.data: return False
-        tid = t.data[0]['id']
-        supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id, 'role': 'admin'}).execute()
-        st.session_state.active_team = name
-        return True
-    except: return False
-
-def join_team_by_code(user_id, code):
-    try:
-        t = supabase.table('teams').select('id, name').eq('invite_code', code).execute()
-        if not t.data: return False
-        tid, name = t.data[0]['id'], t.data[0]['name']
-        if supabase.table('team_members').select('*').eq('team_id', tid).eq('user_id', user_id).execute().data: return True
-        supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id}).execute()
-        st.session_state.active_team = name
-        return True
-    except: return False
-
-def add_ghost_member(team_id, name, email, tz, owner_id):
-    try:
-        team_data = supabase.table('teams').select('trial_ends_at').eq('id', team_id).single().execute()
-        count = supabase.table('team_members').select('*', count='exact').eq('team_id', team_id).execute().count
-        
-        trial_end_str = team_data.data.get('trial_ends_at')
-        limit = 3
-        allow_add = False
-        
-        if trial_end_str:
-            trial_end = dt.datetime.fromisoformat(trial_end_str.replace('Z', '+00:00'))
-            is_trial_active = dt.datetime.now(trial_end.tzinfo) < trial_end
-            if is_trial_active: allow_add = True
-            elif count < limit: allow_add = True
-        else:
-            if count < limit: allow_add = True
-
-        if not allow_add:
-            st.error(f"🔒 Trial Expired! Limit {limit} members.")
-            return False
-
-        if supabase.table('team_members').select('id').eq('team_id', team_id).eq('ghost_email', email).execute().data: return False
-        supabase.table('team_members').insert({'team_id': team_id, 'is_ghost': True, 'ghost_name': name, 'ghost_email': email, 'ghost_timezone': tz}).execute()
-        return True
-    except: return False
-
 def check_team_status(team_id):
     try:
         team = supabase.table('teams').select('trial_ends_at').eq('id', team_id).single().execute()
@@ -425,6 +215,36 @@ def check_team_status(team_id):
         return 'active'
     except: return 'active'
 
+def join_team_by_code(user_id, code):
+    try:
+        t = supabase.table('teams').select('id, name').eq('invite_code', code).execute()
+        if not t.data: return False
+        tid, name = t.data[0]['id'], t.data[0]['name']
+        if supabase.table('team_members').select('*').eq('team_id', tid).eq('user_id', user_id).execute().data: return True
+        supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id}).execute()
+        st.session_state.active_team = name
+        return True
+    except: return False
+
+def create_team(user_id, name):
+    import secrets, string
+    code = "NYNC-" + ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+    try:
+        t = supabase.table('teams').insert({'name': name, 'invite_code': code, 'created_by': user_id}).execute()
+        if not t.data: return False
+        tid = t.data[0]['id']
+        supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id, 'role': 'admin'}).execute()
+        st.session_state.active_team = name
+        return True
+    except: return False
+
+def add_ghost_member(team_id, name, email, tz, owner_id):
+    try:
+        if supabase.table('team_members').select('id').eq('team_id', team_id).eq('ghost_email', email).execute().data: return False
+        supabase.table('team_members').insert({'team_id': team_id, 'is_ghost': True, 'ghost_name': name, 'ghost_email': email, 'ghost_timezone': tz}).execute()
+        return True
+    except: return False
+
 def get_google_url():
     try:
         base_url = "https://nyncapp.streamlit.app/"
@@ -439,30 +259,19 @@ def get_google_url():
         return data.url
     except: return None
 
-# --- STRIPE PAYMENTS (UPDATED) ---
+# --- STRIPE ---
 def create_stripe_checkout(user_email, price_id, success_url=None, cancel_url=None):
-    """
-    Creates a Stripe Checkout Session and returns the URL.
-    Accepts success/cancel URLs from pricing.py, defaults to live site if missing.
-    """
     if "stripe" not in st.secrets: return None
-    
     stripe.api_key = st.secrets["stripe"]["secret_key"]
-    # Default Fallback (Production)
     base_url = "https://nyncapp.streamlit.app"
     
-    if not success_url:
-        success_url = f"{base_url}/?stripe_session_id={{CHECKOUT_SESSION_ID}}"
-    if not cancel_url:
-        cancel_url = f"{base_url}/?nav=Pricing"
+    if not success_url: success_url = f"{base_url}/?stripe_session_id={{CHECKOUT_SESSION_ID}}"
+    if not cancel_url: cancel_url = f"{base_url}/?nav=Pricing"
     
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=['card'],
-            line_items=[{
-                'price': price_id,
-                'quantity': 1,
-            }],
+            line_items=[{'price': price_id, 'quantity': 1}],
             mode='subscription',
             customer_email=user_email,
             success_url=success_url,
@@ -474,91 +283,41 @@ def create_stripe_checkout(user_email, price_id, success_url=None, cancel_url=No
         return None
 
 def verify_stripe_payment(session_id):
-    """
-    Checks with Stripe if the session was paid and returns the price_id.
-    """
     if "stripe" not in st.secrets: return None
     stripe.api_key = st.secrets["stripe"]["secret_key"]
-    
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status == 'paid':
             line_item = stripe.checkout.Session.list_line_items(session_id, limit=1)
-            price_id = line_item.data[0].price.id
-            return price_id
-    except:
-        return None
-    return None
+            return line_item.data[0].price.id
+    except: return None
 
 def upgrade_user_tier(user_id, tier_name):
-    """Updates the user's profile in Supabase."""
     try:
         supabase.table('profiles').update({'subscription_tier': tier_name}).eq('id', user_id).execute()
         return True
     except: return False
+
+def create_stripe_portal_session(user_email):
+    if "stripe" not in st.secrets: return None
+    stripe.api_key = st.secrets["stripe"]["secret_key"]
+    try:
+        customers = stripe.Customer.list(email=user_email, limit=1)
+        if not customers.data: return None
+        return stripe.billing_portal.Session.create(
+            customer=customers.data[0].id,
+            return_url="https://nyncapp.streamlit.app/?nav=Settings"
+        ).url
+    except: return None
 
 def delete_user_data(user_id):
     try:
         supabase.table('calendar_connections').delete().eq('user_id', user_id).execute()
         supabase.table('team_members').delete().eq('user_id', user_id).execute()
         supabase.table('profiles').delete().eq('id', user_id).execute()
-        clear_cookies()
         return True
     except: return False
 
-# --- SUBSCRIPTION MANAGEMENT ---
-
-# Define the hierarchy of plans
-TIER_LEVELS = {
-    "free": 0,
-    "squad": 1,
-    "guild": 2,
-    "empire": 3
-}
-
 def get_tier_level(tier_name):
-    """Returns the numeric level of a tier (0-3)."""
-    return TIER_LEVELS.get(tier_name.lower(), 0)
-
-def create_stripe_portal_session(user_email):
-    """
-    Generates a link to the Stripe Customer Portal for cancelling/managing billing.
-    """
-    if "stripe" not in st.secrets: return None
-    stripe.api_key = st.secrets["stripe"]["secret_key"]
-    base_url = "https://nyncapp.streamlit.app/" # Change to https://nync.app for production
-
-    try:
-        # 1. Search for the customer by email
-        customers = stripe.Customer.list(email=user_email, limit=1)
-        if not customers.data:
-            return None # User has never paid via Stripe
-        
-        customer_id = customers.data[0].id
-
-        # 2. Create the portal session
-        session = stripe.billing_portal.Session.create(
-            customer=customer_id,
-            return_url=f"{base_url}/?nav=Settings"
-        )
-        return session.url
-    except Exception as e:
-        print(f"Portal Error: {e}")
-        return None
-
-def login_user(email, password, remember=False):
-    if not supabase: return
-    try:
-        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        st.session_state.session = res.session
-        st.session_state.user = res.user
-        
-        # ONLY SAVE COOKIE IF USER CHECKED THE BOX
-        if remember:
-            save_session_to_cookies(res.session) 
-        else:
-            # Ensure no old cookies linger if they didn't check it
-            clear_cookies()
-            
-        st.rerun()
-    except Exception as e: st.error(f"Login failed: {e}")
+    tiers = {'free': 0, 'squad': 1, 'guild': 2, 'empire': 3}
+    return tiers.get(tier_name.lower(), 0)
