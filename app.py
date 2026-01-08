@@ -87,6 +87,14 @@ if "code" in st.query_params:
 # B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
+    
+    # --- AUTO-RELOAD CHECKER ---
+    # If the user logs in via the popup, this silent check will detect the new cookie
+    # and reload the main page automatically.
+    # We delay slightly to avoid hammering the cookie manager
+    time.sleep(2) 
+    if auth.restore_session_from_cookies():
+        st.rerun()
 
 # C: DASHBOARD
 else:
@@ -173,3 +181,4 @@ else:
     elif nav == "Settings": settings.show(st.session_state.user, auth.supabase)
     elif nav == "Pricing": pricing.show()
     elif nav == "Legal": legal.show()
+
