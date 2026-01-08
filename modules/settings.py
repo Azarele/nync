@@ -2,8 +2,6 @@ import streamlit as st
 import auth_utils as auth
 
 def show(user, supabase):
-    # --- HEADER REMOVED (Handled by app.py) ---
-    
     st.header("⚙️ Settings")
     st.divider()
 
@@ -13,11 +11,18 @@ def show(user, supabase):
     with c1:
         st.write(f"**Email:** {user.email}")
         
-        # Get Profile Data
+        # Get Profile Data & Show Badge
         profile = auth.get_user_profile(user.id)
         if profile:
-            current_tier = profile.get('subscription_tier', 'free').title()
-            st.write(f"**Current Plan:** {current_tier}")
+            tier = profile.get('subscription_tier', 'free').upper()
+            
+            # Color logic
+            color = "#666"
+            if tier == "SQUAD": color = "#ff8c00"
+            if tier == "GUILD": color = "#1e90ff"
+            if tier == "EMPIRE": color = "#9932cc"
+            
+            st.markdown(f"**Current Plan:** <span style='background-color:{color}; color:white; padding:2px 8px; border-radius:4px;'>{tier}</span>", unsafe_allow_html=True)
     
     with c2:
         if st.button("Manage Subscription"):
@@ -32,7 +37,6 @@ def show(user, supabase):
     # 2. TEAM MANAGEMENT
     st.subheader("Your Teams")
     
-    # Create Team
     with st.expander("Create a New Team"):
         new_team_name = st.text_input("Team Name")
         if st.button("Create Team"):
@@ -42,7 +46,6 @@ def show(user, supabase):
             else:
                 st.error("Failed to create team.")
 
-    # Join Team
     with st.expander("Join a Team"):
         code = st.text_input("Enter Invite Code (e.g. NYNC-1234)")
         if st.button("Join"):
@@ -58,9 +61,8 @@ def show(user, supabase):
         st.write("### Integrations")
         for name, tid in my_teams.items():
             with st.expander(f"🔌 {name} Settings"):
-                st.write("Connect Nync to your chat app to send poll notifications.")
+                st.write("Connect Nync to your chat app.")
                 
-                # Fetch current webhook
                 t_data = supabase.table('teams').select('webhook_url, invite_code').eq('id', tid).single().execute()
                 current_hook = t_data.data.get('webhook_url', '')
                 invite_code = t_data.data.get('invite_code', 'N/A')
@@ -75,7 +77,6 @@ def show(user, supabase):
     
     st.divider()
     
-    # 3. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
         st.warning("These actions are irreversible.")
         if st.button("Delete My Account", type="primary"):
