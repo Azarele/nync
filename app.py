@@ -3,7 +3,8 @@ import time
 import base64
 import html
 import auth_utils as auth
-from modules import login, martyr_board, scheduler, settings, pricing, legal, vote
+# IMPORT THE NEW MODULE
+from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide
 
 # 1. SETUP
 try:
@@ -63,14 +64,11 @@ if "code" in st.query_params:
     code = st.query_params["code"]
     state = st.query_params.get("state", None)
     
-    # CASE A: Microsoft Outlook (Already Logged In)
     if state == "microsoft_connect" and st.session_state.session:
         if auth.handle_microsoft_callback(code, st.session_state.user.id):
             st.toast("✅ Outlook Connected!")
         st.query_params.clear()
         st.rerun()
-    
-    # CASE B: Google Login (Exchange Code for Session)
     elif not state: 
         try:
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
@@ -98,8 +96,8 @@ else:
         vote.show(st.query_params["vote"], auth.supabase)
         st.stop()
 
-    # --- TOP NAV BAR ---
-    c_logo, c_dash, c_set, c_price, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 3, 1.2], gap="small")
+    # --- TOP NAV BAR (Updated with Guide) ---
+    c_logo, c_dash, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 2, 1.2], gap="small")
     
     with c_logo:
         try:
@@ -115,6 +113,9 @@ else:
         if st.button("Settings", use_container_width=True): st.session_state.nav = "Settings"
     with c_price:
         if st.button("Pricing", use_container_width=True): st.session_state.nav = "Pricing"
+    with c_guide:
+        # NEW GUIDE BUTTON
+        if st.button("Guide", use_container_width=True): st.session_state.nav = "Guide"
     with c_legal:
         if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
 
@@ -140,7 +141,6 @@ else:
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
-            # --- SUBSCRIPTION BADGE ---
             profile = auth.get_user_profile(st.session_state.user.id)
             user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
             
@@ -173,4 +173,5 @@ else:
 
     elif nav == "Settings": settings.show(st.session_state.user, auth.supabase)
     elif nav == "Pricing": pricing.show()
+    elif nav == "Guide": guide.show() # NEW ROUTE
     elif nav == "Legal": legal.show()
