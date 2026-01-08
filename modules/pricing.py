@@ -82,7 +82,15 @@ def start_checkout(price_id):
         st.error("Please log in first.")
         return
         
-    url = auth.create_stripe_checkout(st.session_state.user.email, price_id)
+    # --- UPDATED: Added Redirection URLs for the live app ---
+    url = auth.create_stripe_checkout(
+        st.session_state.user.email, 
+        price_id,
+        success_url="https://nyncapp.streamlit.app/?stripe_session_id={CHECKOUT_SESSION_ID}",
+        cancel_url="https://nyncapp.streamlit.app/?stripe_cancel=true"
+    )
+    # --------------------------------------------------------
+
     if url:
         st.link_button("👉 Click to Pay Securely", url, type="primary", use_container_width=True)
     else:
