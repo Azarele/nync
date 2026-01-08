@@ -37,7 +37,7 @@ if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 
-# 3. GLOBAL QUERY PARAMS (Handle Redirects)
+# 3. GLOBAL QUERY PARAMS
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
@@ -58,35 +58,21 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
     st.query_params.clear()
     st.rerun()
 
-# --- MICROSOFT / GOOGLE CALLBACK ---
-# If code exists, try to exchange it for a session
-if "code" in st.query_params:
-    code = st.query_params["code"]
-    state = st.query_params.get("state", None)
-    
-    # MICROSOFT OUTLOOK
-    if state == "microsoft_connect" and st.session_state.session:
-        if auth.handle_microsoft_callback(code, st.session_state.user.id):
-            st.toast("✅ Outlook Connected!")
-        st.query_params.clear()
-        st.rerun()
-    
-    # GOOGLE AUTH (Or Supabase Magic Link)
-    elif not state: 
-        try:
-            res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
-            if res.session:
-                st.session_state.session = res.session
-                st.session_state.user = res.user
-                st.query_params.clear()
-                st.rerun()
-        except: 
-            st.query_params.clear()
-
 # 4. ROUTER
 # B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
+    
+    # --- AUTO-RELOAD FOR POPUP LOGIN ---
+    # If the user logged in via the popup, the cookie is set. 
+    # We poll for it here.
+    time.sleep(1.5)
+    if auth.supabase.auth.get_session():
+        # Session found! Reload to enter dashboard.
+        res = auth.supabase.auth.get_session()
+        st.session_state.session = res
+        st.session_state.user = res.user
+        st.rerun()
 
 # C: DASHBOARD
 else:
@@ -141,17 +127,28 @@ else:
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
-            # Header with Team Selector
+            # --- SHOW SUBSCRIPTION BADGE ---
+            profile = auth.get_user_profile(st.session_state.user.id)
+            user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
+            
+            # Tier Colors
+            tier_color = "#666" # Free (Grey)
+            if user_tier == "SQUAD": tier_color = "#ff8c00" # Orange
+            if user_tier == "GUILD": tier_color = "#1e90ff" # Blue
+            if user_tier == "EMPIRE": tier_color = "#9932cc" # Purple
+
             safe_team = html.escape(st.session_state.active_team)
+            badge_html = f"<span style='background-color:{tier_color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle; margin-left:10px;'>{user_tier}</span>"
+
             if len(my_teams) > 1:
                 c1, c2 = st.columns([3, 1])
-                c1.markdown(f"### {safe_team}")
+                c1.markdown(f"### {safe_team} {badge_html}", unsafe_allow_html=True)
                 new = c2.selectbox("Switch Team", list(my_teams.keys()), label_visibility="collapsed")
                 if new != st.session_state.active_team:
                     st.session_state.active_team = new
                     st.rerun()
             else:
-                st.markdown(f"### {safe_team}")
+                st.markdown(f"### {safe_team} {badge_html}", unsafe_allow_html=True)
 
             if status == 'locked':
                 st.error("Team Locked (Trial Expired)")
@@ -159,7 +156,6 @@ else:
             else:
                 roster = auth.get_team_roster(st.session_state.active_team_id)
                 t1, t2 = st.tabs(["Pain Board", "Scheduler"])
-                # Note: Pass team_id to martyr_board, user/roster to scheduler
                 with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
 
