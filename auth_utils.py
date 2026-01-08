@@ -38,6 +38,8 @@ def signup_user(email, password):
         else: st.info("Check email to confirm.")
     except Exception as e: st.error(f"Sign up failed: {e}")
 
+# CACHED: Profile data rarely changes, cache for 5 minutes
+@st.cache_data(ttl=300)
 def get_user_profile(user_id):
     try: return supabase.table('profiles').select('*').eq('id', user_id).single().execute().data
     except: return None
@@ -167,6 +169,9 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
     except: return False
 
 # --- STATS & TEAMS ---
+
+# CACHED: Leaderboard calculation is heavy, cache for 1 minute
+@st.cache_data(ttl=60)
 def get_martyr_stats(team_id):
     if not supabase: return []
     try:
@@ -181,12 +186,16 @@ def get_martyr_stats(team_id):
         return leaderboard
     except: return []
 
+# CACHED: Team list rarely changes, cache for 1 minute
+@st.cache_data(ttl=60)
 def get_user_teams(user_id):
     try:
         resp = supabase.table('team_members').select('team_id, teams(name, invite_code)').eq('user_id', user_id).execute()
         return {item['teams']['name']: item['team_id'] for item in resp.data if item['teams']}
     except: return {}
 
+# CACHED: Roster is heavy, cache for 1 minute
+@st.cache_data(ttl=60)
 def get_team_roster(team_id):
     roster = []
     try:
@@ -215,6 +224,7 @@ def check_team_status(team_id):
         return 'active'
     except: return 'active'
 
+# NOT Cached: Writing data must be instant
 def join_team_by_code(user_id, code):
     try:
         t = supabase.table('teams').select('id, name').eq('invite_code', code).execute()
@@ -223,9 +233,12 @@ def join_team_by_code(user_id, code):
         if supabase.table('team_members').select('*').eq('team_id', tid).eq('user_id', user_id).execute().data: return True
         supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id}).execute()
         st.session_state.active_team = name
+        # Clear cache so new team appears immediately
+        get_user_teams.clear() 
         return True
     except: return False
 
+# NOT Cached: Writing data must be instant
 def create_team(user_id, name):
     import secrets, string
     code = "NYNC-" + ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
@@ -235,6 +248,8 @@ def create_team(user_id, name):
         tid = t.data[0]['id']
         supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id, 'role': 'admin'}).execute()
         st.session_state.active_team = name
+        # Clear cache so new team appears immediately
+        get_user_teams.clear()
         return True
     except: return False
 
@@ -242,6 +257,7 @@ def add_ghost_member(team_id, name, email, tz, owner_id):
     try:
         if supabase.table('team_members').select('id').eq('team_id', team_id).eq('ghost_email', email).execute().data: return False
         supabase.table('team_members').insert({'team_id': team_id, 'is_ghost': True, 'ghost_name': name, 'ghost_email': email, 'ghost_timezone': tz}).execute()
+        get_team_roster.clear() # Clear cache so ghost appears
         return True
     except: return False
 
@@ -295,6 +311,8 @@ def verify_stripe_payment(session_id):
 def upgrade_user_tier(user_id, tier_name):
     try:
         supabase.table('profiles').update({'subscription_tier': tier_name}).eq('id', user_id).execute()
+        # Clear profile cache so badge updates
+        get_user_profile.clear()
         return True
     except: return False
 
