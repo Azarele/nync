@@ -58,21 +58,36 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
     st.query_params.clear()
     st.rerun()
 
+# --- AUTH CALLBACKS (Google / Microsoft) ---
+if "code" in st.query_params:
+    code = st.query_params["code"]
+    state = st.query_params.get("state", None)
+    
+    # CASE A: Microsoft Outlook (Already Logged In)
+    if state == "microsoft_connect" and st.session_state.session:
+        if auth.handle_microsoft_callback(code, st.session_state.user.id):
+            st.toast("✅ Outlook Connected!")
+        st.query_params.clear()
+        st.rerun()
+    
+    # CASE B: Google Login (Not Logged In Yet)
+    elif not state: 
+        try:
+            # Exchange code for session
+            res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
+            if res.session:
+                st.session_state.session = res.session
+                st.session_state.user = res.user
+                st.query_params.clear()
+                st.rerun()
+        except Exception as e: 
+            # If code is invalid or expired, just clear it and show login
+            st.query_params.clear()
+
 # 4. ROUTER
 # B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
-    
-    # --- AUTO-RELOAD FOR POPUP LOGIN ---
-    # If the user logged in via the popup, the cookie is set. 
-    # We poll for it here.
-    time.sleep(1.5)
-    if auth.supabase.auth.get_session():
-        # Session found! Reload to enter dashboard.
-        res = auth.supabase.auth.get_session()
-        st.session_state.session = res
-        st.session_state.user = res.user
-        st.rerun()
 
 # C: DASHBOARD
 else:
@@ -127,15 +142,14 @@ else:
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
-            # --- SHOW SUBSCRIPTION BADGE ---
+            # --- SUBSCRIPTION BADGE ---
             profile = auth.get_user_profile(st.session_state.user.id)
             user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
             
-            # Tier Colors
-            tier_color = "#666" # Free (Grey)
-            if user_tier == "SQUAD": tier_color = "#ff8c00" # Orange
-            if user_tier == "GUILD": tier_color = "#1e90ff" # Blue
-            if user_tier == "EMPIRE": tier_color = "#9932cc" # Purple
+            tier_color = "#666" 
+            if user_tier == "SQUAD": tier_color = "#ff8c00"
+            if user_tier == "GUILD": tier_color = "#1e90ff"
+            if user_tier == "EMPIRE": tier_color = "#9932cc"
 
             safe_team = html.escape(st.session_state.active_team)
             badge_html = f"<span style='background-color:{tier_color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle; margin-left:10px;'>{user_tier}</span>"
