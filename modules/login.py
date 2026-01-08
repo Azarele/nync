@@ -28,37 +28,20 @@ def show():
                 email = st.text_input("Email", key="login_email")
                 password = st.text_input("Password", type="password", key="login_pass")
                 
-                # --- NEW: REMEMBER ME CHECKBOX ---
-                remember_me = st.checkbox("Remember Me") 
+                # REMEMBER ME CHECKBOX
+                remember_me = st.checkbox("Remember Me", key="login_remember")
                 
                 if st.form_submit_button("Log In", type="primary", use_container_width=True):
-                    # Pass the checkbox value to the auth function
                     auth.login_user(email, password, remember=remember_me)
             
             st.write("---")
             
-            # GOOGLE LOGIN
+            # GOOGLE LOGIN (Native Button for Reliability)
             google_url = auth.get_google_url()
             if google_url:
-                st.markdown(f'''
-                    <a href="{google_url}" target="_self" style="
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        width: 100%;
-                        background-color: transparent;
-                        color: #4285F4;
-                        padding: 8px;
-                        border-radius: 4px;
-                        text-decoration: none;
-                        border: 1px solid #4285F4;
-                        font-family: sans-serif;
-                        font-weight: 500;
-                        transition: all 0.2s;
-                    ">
-                        🔵 Sign in with Google
-                    </a>
-                ''', unsafe_allow_html=True)
+                st.link_button("🔵 Sign in with Google", google_url, use_container_width=True)
+            else:
+                st.error("Google Login not configured in secrets.toml")
 
         # --- TAB 2: SIGN UP ---
         with tab2:
