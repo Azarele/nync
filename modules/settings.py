@@ -34,7 +34,30 @@ def show(user, supabase):
 
     st.divider()
 
-    # 2. TEAM MANAGEMENT (Create / Join)
+    # 2. CALENDAR CONNECTIONS (RESTORED)
+    st.subheader("📅 Calendar Connections")
+    
+    # Check if Outlook is already connected via database
+    try:
+        conn = supabase.table("calendar_connections").select("id").eq("user_id", user.id).eq("provider", "outlook").execute()
+        is_connected = len(conn.data) > 0
+    except:
+        is_connected = False
+
+    if is_connected:
+        st.success("✅ Outlook Calendar Connected")
+        if st.button("Disconnect Outlook"):
+            supabase.table("calendar_connections").delete().eq("user_id", user.id).eq("provider", "outlook").execute()
+            st.rerun()
+    else:
+        st.info("Connect your Outlook calendar to enable the Scheduler.")
+        ms_url = auth.get_microsoft_url()
+        # Using link_button for external redirect
+        st.link_button("🔌 Connect Outlook Calendar", ms_url, use_container_width=True)
+
+    st.divider()
+
+    # 3. TEAM MANAGEMENT (Create / Join)
     st.subheader("Team Management")
     c_create, c_join = st.columns(2)
     
@@ -58,7 +81,7 @@ def show(user, supabase):
 
     st.divider()
 
-    # 3. MY TEAMS (Dropdown Style)
+    # 4. MY TEAMS (Dropdown Style)
     st.subheader("My Teams")
     
     my_teams = auth.get_user_teams(user.id)
@@ -102,7 +125,7 @@ def show(user, supabase):
     
     st.divider()
     
-    # 4. DANGER ZONE
+    # 5. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
         st.warning("These actions are irreversible.")
         if st.button("Delete My Account", type="primary"):

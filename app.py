@@ -3,7 +3,7 @@ import time
 import base64
 import html
 import auth_utils as auth
-# IMPORT THE NEW MODULE
+# IMPORT THE NEW MODULES
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide
 
 # 1. SETUP
@@ -43,7 +43,8 @@ if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
 
-if "invite" in st.query_params: st.session_state.pending_invite = st.query_params["invite"]
+if "invite" in st.query_params: 
+    st.session_state.pending_invite = st.query_params["invite"]
 
 # --- STRIPE CALLBACK ---
 if "stripe_session_id" in st.query_params and st.session_state.user:
@@ -87,16 +88,26 @@ if not st.session_state.session:
 
 # C: DASHBOARD
 else:
+    # --- HANDLE PENDING INVITES ---
     if 'pending_invite' in st.session_state:
-        auth.join_team_by_code(st.session_state.user.id, st.session_state.pending_invite)
+        code = st.session_state.pending_invite
+        if auth.join_team_by_code(st.session_state.user.id, code):
+            st.toast(f"✅ Joined Team!")
+        else:
+            st.toast("❌ Invalid Invite Code")
+        
+        # CLEANUP: Remove pending invite and clear URL to prevent loops
         del st.session_state.pending_invite
+        if "invite" in st.query_params:
+            st.query_params.clear()
+        time.sleep(1)
         st.rerun()
 
     if "vote" in st.query_params:
         vote.show(st.query_params["vote"], auth.supabase)
         st.stop()
 
-    # --- TOP NAV BAR (Updated with Guide) ---
+    # --- TOP NAV BAR ---
     c_logo, c_dash, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 2, 1.2], gap="small")
     
     with c_logo:
@@ -114,7 +125,6 @@ else:
     with c_price:
         if st.button("Pricing", use_container_width=True): st.session_state.nav = "Pricing"
     with c_guide:
-        # NEW GUIDE BUTTON
         if st.button("Guide", use_container_width=True): st.session_state.nav = "Guide"
     with c_legal:
         if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
@@ -173,5 +183,5 @@ else:
 
     elif nav == "Settings": settings.show(st.session_state.user, auth.supabase)
     elif nav == "Pricing": pricing.show()
-    elif nav == "Guide": guide.show() # NEW ROUTE
+    elif nav == "Guide": guide.show()
     elif nav == "Legal": legal.show()
