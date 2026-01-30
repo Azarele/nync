@@ -62,20 +62,27 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
 # --- AUTH CALLBACKS (Google / Microsoft) ---
 if "code" in st.query_params:
     code = st.query_params["code"]
-    state = st.query_params.get("state", None)
+    state = st.query_params.get("state", "")
     
-    # CASE A: Microsoft Outlook Connection (Specific State)
-    if state == "microsoft_connect" and st.session_state.session:
-        if auth.handle_microsoft_callback(code, st.session_state.user.id):
-            st.toast("✅ Outlook Connected Successfully!")
-            st.session_state.nav = "Settings" # Send to Settings to see status
-        else:
-            st.error("❌ Connection failed. Please try again.")
+    # CASE A: Microsoft Outlook Connection
+    # We check if the state STARTS with our key phrase
+    if state.startswith("microsoft_connect"):
+        try:
+            # Extract User ID from State (Format: "microsoft_connect:USER_ID")
+            user_id = state.split(":")[1]
+            
+            if auth.handle_microsoft_callback(code, user_id):
+                st.toast("✅ Outlook Connected! Please log in again to see changes.")
+                time.sleep(1)
+            else:
+                st.error("❌ Connection failed.")
+        except Exception as e:
+            st.error(f"Link Error: {e}")
+        
         st.query_params.clear()
         st.rerun()
         
     # CASE B: Standard Login (Google / Supabase)
-    # Catches ANY other state (Google sends a random state string)
     else: 
         try:
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
@@ -84,10 +91,8 @@ if "code" in st.query_params:
                 st.session_state.user = res.user
                 st.query_params.clear()
                 st.rerun()
-        except Exception as e: 
-            # If it fails, clear params so user isn't stuck in a loop
+        except: 
             st.query_params.clear()
-            # Optional: st.error(f"Login Error: {e}")
 
 # 4. ROUTER
 # B: LOGIN PAGE

@@ -44,13 +44,15 @@ def get_user_profile(user_id):
     except: return None
 
 # --- MICROSOFT AUTH ---
-def get_microsoft_url():
+def get_microsoft_url(user_id): # <--- Added user_id parameter
     try:
         client_id = st.secrets["microsoft"]["client_id"]
         redirect_uri = st.secrets["microsoft"]["redirect_uri"]
         authority = st.secrets["microsoft"]["authority"]
         scope = "Calendars.ReadWrite offline_access User.Read"
-        return (f"{authority}/oauth2/v2.0/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&response_mode=query&scope={scope}&state=microsoft_connect")
+        # We embed the user_id in the state so we remember who they are when they return
+        state = f"microsoft_connect:{user_id}" 
+        return (f"{authority}/oauth2/v2.0/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&response_mode=query&scope={scope}&state={state}")
     except: return "#"
 
 def handle_microsoft_callback(code, user_id):

@@ -64,7 +64,8 @@ def show(user, supabase):
     else:
         # DISCONNECTED STATE
         st.info("Connect your Outlook calendar to enable the Scheduler.")
-        ms_url = auth.get_microsoft_url()
+        # PASS THE USER ID HERE 👇
+        ms_url = auth.get_microsoft_url(user.id) 
         st.link_button("🔌 Connect Outlook Account", ms_url, type="primary", use_container_width=True)
 
     st.divider()
