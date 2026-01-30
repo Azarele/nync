@@ -67,19 +67,14 @@ if "code" in st.query_params:
     
     if state == "microsoft_connect" and st.session_state.session:
         if auth.handle_microsoft_callback(code, st.session_state.user.id):
-            st.toast("✅ Outlook Connected!")
+            st.toast("✅ Outlook Connected Successfully!")
+            # FIX: Send user straight to Settings to see the green checkmark
+            st.session_state.nav = "Settings" 
+        else:
+            st.error("❌ Connection failed. Please try again.")
+            
         st.query_params.clear()
         st.rerun()
-    elif not state: 
-        try:
-            res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
-            if res.session:
-                st.session_state.session = res.session
-                st.session_state.user = res.user
-                st.query_params.clear()
-                st.rerun()
-        except: 
-            st.query_params.clear()
 
 # 4. ROUTER
 # B: LOGIN PAGE
