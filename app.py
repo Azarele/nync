@@ -3,7 +3,6 @@ import time
 import base64
 import html
 import auth_utils as auth
-# IMPORT THE NEW MODULES
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide
 
 # 1. SETUP
@@ -65,16 +64,29 @@ if "code" in st.query_params:
     code = st.query_params["code"]
     state = st.query_params.get("state", None)
     
+    # CASE A: Microsoft Outlook Connection (Requires "microsoft_connect" state)
     if state == "microsoft_connect" and st.session_state.session:
         if auth.handle_microsoft_callback(code, st.session_state.user.id):
             st.toast("✅ Outlook Connected Successfully!")
-            # FIX: Send user straight to Settings to see the green checkmark
-            st.session_state.nav = "Settings" 
+            st.session_state.nav = "Settings" # Send to Settings to see status
         else:
             st.error("❌ Connection failed. Please try again.")
-            
         st.query_params.clear()
         st.rerun()
+        
+    # CASE B: Standard Login (Google / Supabase)
+    # Allows ANY other state (or no state) to proceed as a login attempt
+    else: 
+        try:
+            res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
+            if res.session:
+                st.session_state.session = res.session
+                st.session_state.user = res.user
+                st.query_params.clear()
+                st.rerun()
+        except: 
+            # Only clear params if it failed, so user isn't stuck in a loop
+            st.query_params.clear()
 
 # 4. ROUTER
 # B: LOGIN PAGE
