@@ -1,10 +1,8 @@
 import streamlit as st
 
 def show():
-    # --- HEADER REMOVED ---
-    
     st.title("⚖️ Legal Information")
-    st.write("Last updated: January 2026")
+    st.write("Last updated: February 2026")
     
     with st.expander("Terms of Service"):
         st.write("""
@@ -31,4 +29,19 @@ def show():
         
         **3. Data Security**
         We take reasonable measures to help protect information about you from loss, theft, misuse and unauthorized access.
+        """)
+
+    # --- NEW COOKIE POLICY SECTION ---
+    with st.expander("Cookie Policy"):
+        st.write("""
+        **1. What are cookies?**
+        Cookies are small text files that are placed on your computer by websites that you visit. We use them to make our service work and to understand how you use it.
+
+        **2. Types of Cookies We Use**
+        * **Essential Cookies:** These are necessary for the website to function (e.g., keeping you logged in securely). You cannot opt-out of these.
+        * **Analytics Cookies:** These allow us to count visits and traffic sources so we can measure and improve the performance of our site.
+        * **Marketing Cookies:** These may be set through our site by us or advertising partners to build a profile of your interests and show you relevant offers (e.g., discounts on Nync plans).
+
+        **3. Managing Preferences**
+        You can change your cookie preferences at any time by visiting the **Settings** page and updating your choices under "Privacy Preferences".
         """)

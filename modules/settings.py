@@ -1,7 +1,10 @@
 import streamlit as st
 import auth_utils as auth
+import datetime as dt
+import time
 
-def show(user, supabase):
+# UPDATE FUNCTION SIGNATURE TO ACCEPT COOKIE MANAGER
+def show(user, supabase, cookie_manager):
     st.header("⚙️ Settings")
     st.divider()
 
@@ -72,7 +75,44 @@ def show(user, supabase):
 
     st.divider()
 
-    # 3. TEAM MANAGEMENT
+    # 3. PRIVACY & COOKIES (NEW SECTION)
+    st.subheader("🍪 Privacy Preferences")
+    
+    # Get current consent
+    current_consent = st.session_state.get('consent', {})
+    
+    # Defaults (if no cookie found, assume False for optional)
+    def_analytics = current_consent.get("analytics", False) if current_consent else False
+    def_marketing = current_consent.get("marketing", False) if current_consent else False
+    
+    with st.expander("Manage Cookie Consent", expanded=False):
+        st.write("Update your cookie preferences here.")
+        
+        # Form to update cookies
+        with st.form("cookie_update_form"):
+            new_analytics = st.checkbox("Analytics Cookies", value=def_analytics, help="Helps us improve Nync features.")
+            new_marketing = st.checkbox("Marketing & Offers", value=def_marketing, help="Allows us to show you relevant upgrade offers.")
+            
+            if st.form_submit_button("Save Preferences"):
+                preference = {
+                    "essential": True,
+                    "analytics": new_analytics,
+                    "marketing": new_marketing,
+                    "timestamp": str(dt.datetime.now())
+                }
+                # Save Cookie (Valid for 365 days)
+                expires = dt.datetime.now() + dt.timedelta(days=365)
+                cookie_manager.set("nync_consent", preference, expires_at=expires)
+                
+                # Update Session State
+                st.session_state.consent = preference
+                st.success("Preferences Saved!")
+                time.sleep(1)
+                st.rerun()
+
+    st.divider()
+
+    # 4. TEAM MANAGEMENT
     st.subheader("Team Management")
     c_create, c_join = st.columns(2)
     
@@ -96,7 +136,7 @@ def show(user, supabase):
 
     st.divider()
 
-    # 4. MY TEAMS
+    # 5. MY TEAMS
     st.subheader("My Teams")
     
     my_teams = auth.get_user_teams(user.id)
@@ -134,7 +174,7 @@ def show(user, supabase):
     
     st.divider()
     
-    # 5. DANGER ZONE
+    # 6. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
         st.warning("These actions are irreversible.")
         if st.button("Delete My Account", type="primary"):

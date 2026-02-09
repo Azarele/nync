@@ -5,7 +5,8 @@ import html
 import auth_utils as auth
 # IMPORT COOKIE MANAGER
 import extra_streamlit_components as stx
-from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide
+# IMPORT NEW CONSENT MODULE
+from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent
 import datetime as dt
 
 # 1. SETUP
@@ -36,13 +37,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. INIT COOKIE MANAGER (PERSISTENT LOGIN)
-# FIX: Removed @st.cache_resource to prevent CachedWidgetWarning
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 3. SESSION INIT
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
+if 'consent' not in st.session_state: st.session_state.consent = None # <-- Stores user consent
+
+# --- SHOW COOKIE CONSENT POPUP ---
+# This checks if the user has already consented; if not, it shows the popup.
+cookie_consent.show(cookie_manager)
 
 # --- CHECK COOKIES FOR EXISTING SESSION ---
 # We verify cookies ONLY if the user is not already logged in
@@ -60,9 +65,10 @@ if not st.session_state.session:
                 st.session_state.user = session.user
                 st.rerun()
         except:
-            # If tokens are invalid/expired, clear them
-            cookie_manager.delete("sb_access_token")
-            cookie_manager.delete("sb_refresh_token")
+            # If tokens are invalid/expired, clear them SAFELY
+            # We check if the key exists before deleting to avoid KeyError
+            if "sb_access_token" in cookies: cookie_manager.delete("sb_access_token")
+            if "sb_refresh_token" in cookies: cookie_manager.delete("sb_refresh_token")
 
 # 4. GLOBAL QUERY PARAMS
 if "vote" in st.query_params and not st.session_state.session:
@@ -160,6 +166,16 @@ else:
     if "vote" in st.query_params:
         vote.show(st.query_params["vote"], auth.supabase)
         st.stop()
+        
+    # --- MONETIZATION: AD BANNER FOR FREE USERS ---
+    user_consent = st.session_state.get('consent', {})
+    profile = auth.get_user_profile(st.session_state.user.id)
+    tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
+
+    # Show ad only if: Tier is FREE AND they accepted 'marketing' cookies
+    if tier == "FREE" and user_consent and user_consent.get("marketing", False):
+        st.info("💡 **Tip:** Upgrade to **Squad Tier** to remove ads and unlock unlimited teams. [View Pricing](#)", icon="🚀")
+
 
     # --- TOP NAV BAR ---
     c_logo, c_dash, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 2, 1.2], gap="small")
@@ -185,9 +201,12 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
-            # CLEAR COOKIES ON LOGOUT
-            cookie_manager.delete("sb_access_token")
-            cookie_manager.delete("sb_refresh_token")
+            # CLEAR COOKIES ON LOGOUT (SAFE WAY)
+            # We check if the key exists before deleting to avoid KeyError
+            cookies = cookie_manager.get_all()
+            if "sb_access_token" in cookies: cookie_manager.delete("sb_access_token")
+            if "sb_refresh_token" in cookies: cookie_manager.delete("sb_refresh_token")
+            
             auth.supabase.auth.sign_out()
             st.session_state.session = None
             st.session_state.user = None
@@ -208,16 +227,13 @@ else:
             st.session_state.active_team_id = my_teams[st.session_state.active_team]
             status = auth.check_team_status(st.session_state.active_team_id)
             
-            profile = auth.get_user_profile(st.session_state.user.id)
-            user_tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
-            
             tier_color = "#666" 
-            if user_tier == "SQUAD": tier_color = "#ff8c00"
-            if user_tier == "GUILD": tier_color = "#1e90ff"
-            if user_tier == "EMPIRE": tier_color = "#9932cc"
+            if tier == "SQUAD": tier_color = "#ff8c00"
+            if tier == "GUILD": tier_color = "#1e90ff"
+            if tier == "EMPIRE": tier_color = "#9932cc"
 
             safe_team = html.escape(st.session_state.active_team)
-            badge_html = f"<span style='background-color:{tier_color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle; margin-left:10px;'>{user_tier}</span>"
+            badge_html = f"<span style='background-color:{tier_color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle; margin-left:10px;'>{tier}</span>"
 
             if len(my_teams) > 1:
                 c1, c2 = st.columns([3, 1])
@@ -238,7 +254,8 @@ else:
                 with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
 
-    elif nav == "Settings": settings.show(st.session_state.user, auth.supabase)
+    # PASS COOKIE MANAGER TO SETTINGS
+    elif nav == "Settings": settings.show(st.session_state.user, auth.supabase, cookie_manager)
     elif nav == "Pricing": pricing.show()
     elif nav == "Guide": guide.show()
     elif nav == "Legal": legal.show()
