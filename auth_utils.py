@@ -44,20 +44,18 @@ def get_user_profile(user_id):
     except: return None
 
 # --- MICROSOFT AUTH ---
-def get_microsoft_url(user_id): # <--- Added user_id parameter
+def get_microsoft_url(user_id):
     try:
         client_id = st.secrets["microsoft"]["client_id"]
         redirect_uri = st.secrets["microsoft"]["redirect_uri"]
         authority = st.secrets["microsoft"]["authority"]
         scope = "Calendars.ReadWrite offline_access User.Read"
-        # We embed the user_id in the state so we remember who they are when they return
-        state = f"microsoft_connect:{user_id}" 
+        state = f"microsoft_connect:{user_id}"
         return (f"{authority}/oauth2/v2.0/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&response_mode=query&scope={scope}&state={state}")
     except: return "#"
 
 def handle_microsoft_callback(code, user_id):
     try:
-        # 1. Exchange Code for Token
         token_url = f"{st.secrets['microsoft']['authority']}/oauth2/v2.0/token"
         payload = {
             "client_id": st.secrets["microsoft"]["client_id"],
@@ -70,10 +68,7 @@ def handle_microsoft_callback(code, user_id):
         r = requests.post(token_url, data=payload)
         tokens = r.json()
         
-        # DEBUG: Check for Microsoft Errors
-        if "access_token" not in tokens:
-            st.error(f"Microsoft Auth Error: {tokens}")
-            return False
+        if "access_token" not in tokens: return False
             
         data = {
             "user_id": user_id, "provider": "outlook",
@@ -82,24 +77,17 @@ def handle_microsoft_callback(code, user_id):
             "expires_in": tokens.get("expires_in")
         }
         
-        # 2. Save to Database
+        # Save to Database
         try:
-            # Check if exists
             existing = supabase.table("calendar_connections").select("id").eq("user_id", user_id).eq("provider", "outlook").execute()
             if existing.data:
                 supabase.table("calendar_connections").update(data).eq("user_id", user_id).eq("provider", "outlook").execute()
             else:
                 supabase.table("calendar_connections").insert(data).execute()
             return True
-        except Exception as db_e:
-            st.error(f"Database Save Error: {db_e}")
-            return False
-            
-    except Exception as e: 
-        st.error(f"Unknown Error: {e}")
-        return False
+        except: return False
+    except: return False
 
-# --- OUTLOOK CALENDAR ---
 def refresh_outlook_token(user_id):
     if not supabase: return None
     try:
@@ -160,54 +148,141 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
         return blocked_hours
     except: return []
 
-def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
-    if not supabase: return False
+# --- GOOGLE AUTH (THE NEW COOKIES 🍪) ---
+def get_google_url():
     try:
-        token = refresh_outlook_token(user_id) 
-        if not token: return False
-
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
+        base_url = "https://nyncapp.streamlit.app/"
+        params = []
+        if "invite" in st.query_params: params.append(f"invite={st.query_params['invite']}")
         
-        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees]
+        redirect_url = f"{base_url}/?{'&'.join(params)}" if params else base_url
+        
+        # REQUEST OFFLINE ACCESS TO GET THE REFRESH TOKEN
+        data = supabase.auth.sign_in_with_oauth({
+            "provider": "google", 
+            "options": {
+                "redirect_to": redirect_url,
+                "queryParams": {
+                    "access_type": "offline", 
+                    "prompt": "consent",
+                    "scope": "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email"
+                }
+            }
+        })
+        return data.url
+    except: return None
 
-        payload = {
-            "subject": subject,
-            "start": {"dateTime": start_dt_utc.isoformat(), "timeZone": "UTC"},
-            "end": {"dateTime": end_dt_utc.isoformat(), "timeZone": "UTC"},
-            "attendees": attendee_list,
-            "isOnlineMeeting": True, 
-            "onlineMeetingProvider": "teamsForBusiness" 
+def save_google_token(user_id, session):
+    """Extracts Google Tokens from the Supabase Session and saves them to DB"""
+    try:
+        if not session.provider_token: return False
+        
+        data = {
+            "user_id": user_id, 
+            "provider": "google",
+            "access_token": session.provider_token,
+            # Supabase only sends refresh_token if 'access_type' was 'offline'
+            "refresh_token": session.provider_refresh_token, 
+            "expires_in": 3599 
         }
 
-        r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
-        return r.status_code in [201, 200]
-    except: return False
+        # Upsert into calendar_connections
+        existing = supabase.table("calendar_connections").select("id").eq("user_id", user_id).eq("provider", "google").execute()
+        if existing.data:
+            supabase.table("calendar_connections").update(data).eq("user_id", user_id).eq("provider", "google").execute()
+        else:
+            supabase.table("calendar_connections").insert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error saving Google Token: {e}")
+        return False
 
-# --- STATS & TEAMS ---
-@st.cache_data(ttl=60)
-def get_martyr_stats(team_id):
-    if not supabase: return []
+def refresh_google_token(user_id):
+    """Refreshes Google Token using the stored Refresh Token"""
+    if not supabase: return None
     try:
-        resp = supabase.table("pain_ledger").select("user_email, pain_score").eq("team_id", team_id).execute()
-        totals = {}
-        for row in resp.data:
-            e = row['user_email']
-            p = row['pain_score']
-            totals[e] = totals.get(e, 0) + p
-        leaderboard = [{"email": k, "total_pain": v} for k, v in totals.items()]
-        leaderboard.sort(key=lambda x: x['total_pain'], reverse=True)
-        return leaderboard
+        record = supabase.table("calendar_connections").select("*").eq("user_id", user_id).eq("provider", "google").single().execute()
+        if not record.data or not record.data.get("refresh_token"): return None
+        
+        # We need Google Client Secrets to refresh manually
+        if "google" not in st.secrets: return None
+        
+        refresh_token = record.data.get("refresh_token")
+        token_url = "https://oauth2.googleapis.com/token"
+        
+        payload = {
+            "client_id": st.secrets["google"]["client_id"],
+            "client_secret": st.secrets["google"]["client_secret"],
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token"
+        }
+        
+        r = requests.post(token_url, data=payload)
+        new_tokens = r.json()
+        
+        if "access_token" not in new_tokens: return None
+        
+        supabase.table("calendar_connections").update({
+            "access_token": new_tokens["access_token"],
+            "expires_in": new_tokens.get("expires_in", 3599)
+        }).eq("user_id", user_id).eq("provider", "google").execute()
+        
+        return new_tokens["access_token"]
+    except: return None
+
+def fetch_google_events(user_id, start_dt, end_dt):
+    if not supabase or not user_id: return []
+    try:
+        response = supabase.table("calendar_connections").select("access_token").eq("user_id", user_id).eq("provider", "google").maybe_single().execute()
+        if not response or not response.data: return []
+        token = response.data.get('access_token')
+
+        start_str = start_dt.isoformat() + "Z"
+        end_str = end_dt.isoformat() + "Z"
+        
+        url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin={start_str}&timeMax={end_str}&singleEvents=true"
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        r = requests.get(url, headers=headers)
+        
+        # If token expired, try to refresh
+        if r.status_code == 401:
+            new_token = refresh_google_token(user_id)
+            if new_token:
+                headers = {"Authorization": f"Bearer {new_token}"}
+                r = requests.get(url, headers=headers)
+            else: return []
+
+        if r.status_code != 200: return []
+        
+        items = r.json().get('items', [])
+        blocked_hours = []
+        for i in items:
+            # Skip all-day events (they have 'date' but no 'dateTime')
+            if 'dateTime' not in i.get('start', {}): continue
+            
+            start = dt.datetime.fromisoformat(i['start']['dateTime'])
+            end = dt.datetime.fromisoformat(i['end']['dateTime'])
+            
+            # Normalize to UTC naive
+            if start.tzinfo: start = start.astimezone(dt.timezone.utc).replace(tzinfo=None)
+            if end.tzinfo: end = end.astimezone(dt.timezone.utc).replace(tzinfo=None)
+            
+            curr = start
+            while curr < end:
+                blocked_hours.append(curr.replace(minute=0, second=0, microsecond=0))
+                curr += dt.timedelta(hours=1)
+                
+        return blocked_hours
     except: return []
 
-@st.cache_data(ttl=60)
+# --- TEAM & UTILS ---
 def get_user_teams(user_id):
     try:
         resp = supabase.table('team_members').select('team_id, teams(name, invite_code)').eq('user_id', user_id).execute()
         return {item['teams']['name']: item['team_id'] for item in resp.data if item['teams']}
     except: return {}
 
-@st.cache_data(ttl=60)
 def get_team_roster(team_id):
     roster = []
     try:
@@ -227,11 +302,9 @@ def check_team_status(team_id):
         if not team.data: return 'active'
         trial_end_str = team.data.get('trial_ends_at')
         if not trial_end_str: return 'active'
-        
         trial_end = dt.datetime.fromisoformat(trial_end_str.replace('Z', '+00:00'))
         is_expired = dt.datetime.now(trial_end.tzinfo) > trial_end
         count = supabase.table('team_members').select('*', count='exact').eq('team_id', team_id).execute().count
-        
         if is_expired and count > 3: return 'locked'
         return 'active'
     except: return 'active'
@@ -261,68 +334,6 @@ def create_team(user_id, name):
         return True
     except: return False
 
-def add_ghost_member(team_id, name, email, tz, owner_id):
-    try:
-        if supabase.table('team_members').select('id').eq('team_id', team_id).eq('ghost_email', email).execute().data: return False
-        supabase.table('team_members').insert({'team_id': team_id, 'is_ghost': True, 'ghost_name': name, 'ghost_email': email, 'ghost_timezone': tz}).execute()
-        get_team_roster.clear() 
-        return True
-    except: return False
-
-def get_google_url():
-    try:
-        base_url = "https://nyncapp.streamlit.app/"
-        params = []
-        if "invite" in st.query_params: params.append(f"invite={st.query_params['invite']}")
-        if "code" in st.query_params and st.query_params.get("state") == "microsoft_connect":
-            params.append(f"ms_stash={st.query_params['code']}")
-        redirect_url = f"{base_url}/?{'&'.join(params)}" if params else base_url
-        data = supabase.auth.sign_in_with_oauth({
-            "provider": "google", "options": {"redirect_to": redirect_url}
-        })
-        return data.url
-    except: return None
-
-# --- STRIPE ---
-def create_stripe_checkout(user_email, price_id, success_url=None, cancel_url=None):
-    if "stripe" not in st.secrets: return None
-    stripe.api_key = st.secrets["stripe"]["secret_key"]
-    base_url = "https://nyncapp.streamlit.app"
-    
-    if not success_url: success_url = f"{base_url}/?stripe_session_id={{CHECKOUT_SESSION_ID}}"
-    if not cancel_url: cancel_url = f"{base_url}/?nav=Pricing"
-    
-    try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=['card'],
-            line_items=[{'price': price_id, 'quantity': 1}],
-            mode='subscription',
-            customer_email=user_email,
-            success_url=success_url,
-            cancel_url=cancel_url,
-        )
-        return session.url
-    except Exception as e:
-        print(f"Stripe Error: {e}")
-        return None
-
-def verify_stripe_payment(session_id):
-    if "stripe" not in st.secrets: return None
-    stripe.api_key = st.secrets["stripe"]["secret_key"]
-    try:
-        session = stripe.checkout.Session.retrieve(session_id)
-        if session.payment_status == 'paid':
-            line_item = stripe.checkout.Session.list_line_items(session_id, limit=1)
-            return line_item.data[0].price.id
-    except: return None
-
-def upgrade_user_tier(user_id, tier_name):
-    try:
-        supabase.table('profiles').update({'subscription_tier': tier_name}).eq('id', user_id).execute()
-        get_user_profile.clear()
-        return True
-    except: return False
-
 def create_stripe_portal_session(user_email):
     if "stripe" not in st.secrets: return None
     stripe.api_key = st.secrets["stripe"]["secret_key"]
@@ -343,14 +354,19 @@ def delete_user_data(user_id):
         return True
     except: return False
 
-def get_tier_level(tier_name):
-    tiers = {'free': 0, 'squad': 1, 'guild': 2, 'empire': 3}
-    return tiers.get(tier_name.lower(), 0)
+def verify_stripe_payment(session_id):
+    if "stripe" not in st.secrets: return None
+    stripe.api_key = st.secrets["stripe"]["secret_key"]
+    try:
+        session = stripe.checkout.Session.retrieve(session_id)
+        if session.payment_status == 'paid':
+            line_item = stripe.checkout.Session.list_line_items(session_id, limit=1)
+            return line_item.data[0].price.id
+    except: return None
 
-def get_team_pain_map(team_id):
-    # Stub for future feature
-    return {}
-
-def create_poll(team_id, top_slots, date_obj):
-    # Stub for future feature
-    return False
+def upgrade_user_tier(user_id, tier_name):
+    try:
+        supabase.table('profiles').update({'subscription_tier': tier_name}).eq('id', user_id).execute()
+        get_user_profile.clear()
+        return True
+    except: return False

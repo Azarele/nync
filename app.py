@@ -65,17 +65,20 @@ if "code" in st.query_params:
     state = st.query_params.get("state", "")
     
     # CASE A: Microsoft Outlook Connection
-    # We check if the state STARTS with our key phrase
+    # We check if the state STARTS with our key phrase to identify it's Outlook
     if state.startswith("microsoft_connect"):
         try:
             # Extract User ID from State (Format: "microsoft_connect:USER_ID")
-            user_id = state.split(":")[1]
-            
-            if auth.handle_microsoft_callback(code, user_id):
-                st.toast("✅ Outlook Connected! Please log in again to see changes.")
-                time.sleep(1)
-            else:
-                st.error("❌ Connection failed.")
+            # This allows us to save the token even if the session was lost during redirect
+            parts = state.split(":")
+            if len(parts) > 1:
+                user_id_from_state = parts[1]
+                if auth.handle_microsoft_callback(code, user_id_from_state):
+                    st.toast("✅ Outlook Connected! Please log in again to see changes.")
+                    # Force user to settings to verify connection
+                    st.session_state.nav = "Settings"
+                else:
+                    st.error("❌ Connection failed.")
         except Exception as e:
             st.error(f"Link Error: {e}")
         
@@ -89,6 +92,11 @@ if "code" in st.query_params:
             if res.session:
                 st.session_state.session = res.session
                 st.session_state.user = res.user
+                
+                # --- SAVE GOOGLE TOKENS (COOKIES) ---
+                # We do this silently on every login to ensure we have the latest keys
+                auth.save_google_token(res.user.id, res.session)
+                
                 st.query_params.clear()
                 st.rerun()
         except: 

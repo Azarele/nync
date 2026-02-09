@@ -32,41 +32,43 @@ def show(user, supabase):
 
     st.divider()
 
-    # 2. CALENDAR CONNECTIONS (UPDATED)
+    # 2. CALENDAR CONNECTIONS
     st.subheader("📅 Calendar Connections")
     
-    # Check Database for Outlook Connection
+    # --- CHECK DATABASE FOR CONNECTIONS ---
     try:
-        conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "outlook").execute()
-        is_connected = len(conn.data) > 0
-        connected_since = conn.data[0]['created_at'][:10] if is_connected else None
-    except:
-        is_connected = False
+        # Check Outlook
+        o_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "outlook").execute()
+        outlook_connected = len(o_conn.data) > 0
+        o_date = o_conn.data[0]['created_at'][:10] if outlook_connected else ""
 
-    if is_connected:
-        # CONNECTED STATE
-        st.success("✅ Outlook is connected and active.")
-        
-        col_info, col_btn = st.columns([3, 1])
-        with col_info:
-            st.caption(f"Connected since: {connected_since}")
-            st.write("Nync can now scan your calendar for busy slots.")
-            
-        with col_btn:
-            # DISCONNECT BUTTON (Allows switching accounts)
-            if st.button("❌ Disconnect", help="Remove this Outlook account"):
-                try:
-                    supabase.table("calendar_connections").delete().eq("user_id", user.id).eq("provider", "outlook").execute()
-                    st.toast("Outlook disconnected.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error disconnecting: {e}")
+        # Check Google
+        g_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "google").execute()
+        google_connected = len(g_conn.data) > 0
+        g_date = g_conn.data[0]['created_at'][:10] if google_connected else ""
+    except:
+        outlook_connected = False
+        google_connected = False
+
+    # --- OUTLOOK STATUS CARD ---
+    if outlook_connected:
+        st.success(f"✅ Outlook Connected (since {o_date})")
+        if st.button("Disconnect Outlook"):
+            supabase.table("calendar_connections").delete().eq("user_id", user.id).eq("provider", "outlook").execute()
+            st.rerun()
     else:
-        # DISCONNECTED STATE
-        st.info("Connect your Outlook calendar to enable the Scheduler.")
-        # PASS THE USER ID HERE 👇
-        ms_url = auth.get_microsoft_url(user.id) 
-        st.link_button("🔌 Connect Outlook Account", ms_url, type="primary", use_container_width=True)
+        # Pass user.id so we can stash it in the redirect state
+        ms_url = auth.get_microsoft_url(user.id)
+        st.link_button("🔌 Connect Outlook", ms_url, type="primary")
+
+    st.write("") # Spacer
+
+    # --- GOOGLE STATUS CARD ---
+    if google_connected:
+        st.success(f"✅ Google Calendar Connected (since {g_date})")
+        st.caption("We have permission to scan your busy slots.")
+    else:
+        st.info("To connect Google Calendar, please Log Out and Log In again using the Google button.")
 
     st.divider()
 
