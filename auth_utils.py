@@ -148,7 +148,31 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
         return blocked_hours
     except: return []
 
-# --- GOOGLE AUTH (THE NEW COOKIES 🍪) ---
+def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
+    if not supabase: return False
+    try:
+        token = refresh_outlook_token(user_id) 
+        if not token: return False
+
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
+        
+        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees]
+
+        payload = {
+            "subject": subject,
+            "start": {"dateTime": start_dt_utc.isoformat(), "timeZone": "UTC"},
+            "end": {"dateTime": end_dt_utc.isoformat(), "timeZone": "UTC"},
+            "attendees": attendee_list,
+            "isOnlineMeeting": True, 
+            "onlineMeetingProvider": "teamsForBusiness" 
+        }
+
+        r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
+        return r.status_code in [201, 200]
+    except: return False
+
+# --- GOOGLE AUTH ---
 def get_google_url():
     try:
         base_url = "https://nyncapp.streamlit.app/"
@@ -157,7 +181,6 @@ def get_google_url():
         
         redirect_url = f"{base_url}/?{'&'.join(params)}" if params else base_url
         
-        # REQUEST OFFLINE ACCESS TO GET THE REFRESH TOKEN
         data = supabase.auth.sign_in_with_oauth({
             "provider": "google", 
             "options": {
@@ -173,7 +196,6 @@ def get_google_url():
     except: return None
 
 def save_google_token(user_id, session):
-    """Extracts Google Tokens from the Supabase Session and saves them to DB"""
     try:
         if not session.provider_token: return False
         
@@ -181,12 +203,10 @@ def save_google_token(user_id, session):
             "user_id": user_id, 
             "provider": "google",
             "access_token": session.provider_token,
-            # Supabase only sends refresh_token if 'access_type' was 'offline'
             "refresh_token": session.provider_refresh_token, 
             "expires_in": 3599 
         }
 
-        # Upsert into calendar_connections
         existing = supabase.table("calendar_connections").select("id").eq("user_id", user_id).eq("provider", "google").execute()
         if existing.data:
             supabase.table("calendar_connections").update(data).eq("user_id", user_id).eq("provider", "google").execute()
@@ -198,13 +218,11 @@ def save_google_token(user_id, session):
         return False
 
 def refresh_google_token(user_id):
-    """Refreshes Google Token using the stored Refresh Token"""
     if not supabase: return None
     try:
         record = supabase.table("calendar_connections").select("*").eq("user_id", user_id).eq("provider", "google").single().execute()
         if not record.data or not record.data.get("refresh_token"): return None
         
-        # We need Google Client Secrets to refresh manually
         if "google" not in st.secrets: return None
         
         refresh_token = record.data.get("refresh_token")
@@ -245,7 +263,6 @@ def fetch_google_events(user_id, start_dt, end_dt):
         
         r = requests.get(url, headers=headers)
         
-        # If token expired, try to refresh
         if r.status_code == 401:
             new_token = refresh_google_token(user_id)
             if new_token:
@@ -258,13 +275,11 @@ def fetch_google_events(user_id, start_dt, end_dt):
         items = r.json().get('items', [])
         blocked_hours = []
         for i in items:
-            # Skip all-day events (they have 'date' but no 'dateTime')
             if 'dateTime' not in i.get('start', {}): continue
             
             start = dt.datetime.fromisoformat(i['start']['dateTime'])
             end = dt.datetime.fromisoformat(i['end']['dateTime'])
             
-            # Normalize to UTC naive
             if start.tzinfo: start = start.astimezone(dt.timezone.utc).replace(tzinfo=None)
             if end.tzinfo: end = end.astimezone(dt.timezone.utc).replace(tzinfo=None)
             
@@ -277,12 +292,29 @@ def fetch_google_events(user_id, start_dt, end_dt):
     except: return []
 
 # --- TEAM & UTILS ---
+@st.cache_data(ttl=60) # <--- THIS WAS THE MISSING FUNCTION CAUSING YOUR ERROR
+def get_martyr_stats(team_id):
+    if not supabase: return []
+    try:
+        resp = supabase.table("pain_ledger").select("user_email, pain_score").eq("team_id", team_id).execute()
+        totals = {}
+        for row in resp.data:
+            e = row['user_email']
+            p = row['pain_score']
+            totals[e] = totals.get(e, 0) + p
+        leaderboard = [{"email": k, "total_pain": v} for k, v in totals.items()]
+        leaderboard.sort(key=lambda x: x['total_pain'], reverse=True)
+        return leaderboard
+    except: return []
+
+@st.cache_data(ttl=60)
 def get_user_teams(user_id):
     try:
         resp = supabase.table('team_members').select('team_id, teams(name, invite_code)').eq('user_id', user_id).execute()
         return {item['teams']['name']: item['team_id'] for item in resp.data if item['teams']}
     except: return {}
 
+@st.cache_data(ttl=60)
 def get_team_roster(team_id):
     roster = []
     try:
@@ -370,3 +402,21 @@ def upgrade_user_tier(user_id, tier_name):
         get_user_profile.clear()
         return True
     except: return False
+
+def create_stripe_checkout(user_email, price_id, success_url=None, cancel_url=None):
+    if "stripe" not in st.secrets: return None
+    stripe.api_key = st.secrets["stripe"]["secret_key"]
+    base_url = "https://nyncapp.streamlit.app"
+    if not success_url: success_url = f"{base_url}/?stripe_session_id={{CHECKOUT_SESSION_ID}}"
+    if not cancel_url: cancel_url = f"{base_url}/?nav=Pricing"
+    try:
+        session = stripe.checkout.Session.create(
+            payment_method_types=['card'],
+            line_items=[{'price': price_id, 'quantity': 1}],
+            mode='subscription',
+            customer_email=user_email,
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        return session.url
+    except: return None
