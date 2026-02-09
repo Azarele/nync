@@ -36,12 +36,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. INIT COOKIE MANAGER (PERSISTENT LOGIN)
-# FIX: Removed 'experimental_allow_widgets=True' which caused the crash
-@st.cache_resource
-def get_manager():
-    return stx.CookieManager()
-
-cookie_manager = get_manager()
+# FIX: Removed @st.cache_resource to prevent CachedWidgetWarning
+cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 3. SESSION INIT
 if 'session' not in st.session_state: st.session_state.session = None
@@ -139,7 +135,6 @@ if not st.session_state.session:
     login.show()
     
     # Check if a manual email/pass login just happened inside login.show()
-    # (If the user logged in via the login form, st.session_state.session is now set)
     if st.session_state.session:
         s = st.session_state.session
         expires = dt.datetime.now() + dt.timedelta(days=30)
