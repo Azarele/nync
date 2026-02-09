@@ -39,38 +39,38 @@ st.markdown("""
 # 2. INIT COOKIE MANAGER (PERSISTENT LOGIN)
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
-# 3. SESSION INIT
+# 3. FETCH COOKIES ONCE (CRITICAL FIX)
+# We fetch them here and pass the 'all_cookies' dictionary to other functions.
+# This prevents calling .get_all() multiple times which causes DuplicateElementKey error.
+time.sleep(0.1) 
+all_cookies = cookie_manager.get_all()
+
+# 4. SESSION INIT
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
-if 'consent' not in st.session_state: st.session_state.consent = None # <-- Stores user consent
+if 'consent' not in st.session_state: st.session_state.consent = None 
 
 # --- SHOW COOKIE CONSENT POPUP ---
-# This checks if the user has already consented; if not, it shows the popup.
-cookie_consent.show(cookie_manager)
+# Pass the 'all_cookies' we just fetched so the module doesn't have to fetch them again
+cookie_consent.show(cookie_manager, all_cookies)
 
 # --- CHECK COOKIES FOR EXISTING SESSION ---
-# We verify cookies ONLY if the user is not already logged in
+# Use 'all_cookies' variable instead of calling get_all() again
 if not st.session_state.session:
-    # Give the cookie manager a moment to connect
-    time.sleep(0.1)
-    cookies = cookie_manager.get_all()
-    
-    if "sb_access_token" in cookies and "sb_refresh_token" in cookies:
+    if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
         try:
-            # Attempt to restore the session using the tokens from the cookie
-            session = auth.restore_session(cookies["sb_access_token"], cookies["sb_refresh_token"])
+            session = auth.restore_session(all_cookies["sb_access_token"], all_cookies["sb_refresh_token"])
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
                 st.rerun()
         except:
-            # If tokens are invalid/expired, clear them SAFELY
-            # We check if the key exists before deleting to avoid KeyError
-            if "sb_access_token" in cookies: cookie_manager.delete("sb_access_token")
-            if "sb_refresh_token" in cookies: cookie_manager.delete("sb_refresh_token")
+            # If tokens are invalid/expired, clear them
+            if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token")
+            if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token")
 
-# 4. GLOBAL QUERY PARAMS
+# 5. GLOBAL QUERY PARAMS
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
@@ -125,7 +125,6 @@ if "code" in st.query_params:
                 auth.save_google_token(res.user.id, res.session)
 
                 # --- SAVE APP SESSION COOKIES (PERSISTENCE) ---
-                # Expires in 30 days
                 expires = dt.datetime.now() + dt.timedelta(days=30)
                 cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires)
                 cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires)
@@ -135,7 +134,7 @@ if "code" in st.query_params:
         except: 
             st.query_params.clear()
 
-# 5. ROUTER
+# 6. ROUTER
 # B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
@@ -176,7 +175,6 @@ else:
     if tier == "FREE" and user_consent and user_consent.get("marketing", False):
         st.info("💡 **Tip:** Upgrade to **Squad Tier** to remove ads and unlock unlimited teams. [View Pricing](#)", icon="🚀")
 
-
     # --- TOP NAV BAR ---
     c_logo, c_dash, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 2, 1.2], gap="small")
     
@@ -202,10 +200,8 @@ else:
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
             # CLEAR COOKIES ON LOGOUT (SAFE WAY)
-            # We check if the key exists before deleting to avoid KeyError
-            cookies = cookie_manager.get_all()
-            if "sb_access_token" in cookies: cookie_manager.delete("sb_access_token")
-            if "sb_refresh_token" in cookies: cookie_manager.delete("sb_refresh_token")
+            if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token")
+            if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token")
             
             auth.supabase.auth.sign_out()
             st.session_state.session = None

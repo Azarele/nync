@@ -37,19 +37,15 @@ def cookie_dialog(cookie_manager):
             save_consent(cookie_manager, preferences)
 
 # 2. MAIN FUNCTION CALLED BY APP.PY
-def show(cookie_manager):
+def show(cookie_manager, cookies):
     # If we already have consent in Session State, do nothing.
     if st.session_state.get("consent"):
         return
 
-    # Check Browser Cookies (in case of reload)
-    try:
-        cookies = cookie_manager.get_all()
-        if "nync_consent" in cookies:
-            st.session_state.consent = cookies["nync_consent"]
-            return
-    except:
-        pass
+    # Check the passed 'cookies' dictionary instead of fetching again
+    if "nync_consent" in cookies:
+        st.session_state.consent = cookies["nync_consent"]
+        return
 
     # TRIGGER THE DIALOG
     # We use a session state flag to ensure it only opens once per run
