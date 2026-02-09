@@ -4,6 +4,7 @@ import requests
 import datetime as dt
 from dateutil import parser
 from supabase import create_client
+import extra_streamlit_components as stx
 
 # --- DATABASE CONNECTION ---
 @st.cache_resource
@@ -87,6 +88,17 @@ def handle_microsoft_callback(code, user_id):
             return True
         except: return False
     except: return False
+
+def restore_session(access_token, refresh_token):
+    if not supabase: return None
+    try:
+        # Tell Supabase to reuse the tokens we found in the cookie
+        res = supabase.auth.set_session(access_token, refresh_token)
+        if res.user:
+            return res.session
+    except:
+        return None
+    return None
 
 def refresh_outlook_token(user_id):
     if not supabase: return None
