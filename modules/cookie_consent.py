@@ -4,88 +4,82 @@ import time
 
 def show(cookie_manager):
     # 1. Check if consent is already given
-    # (We read the cookie directly to avoid showing popup if already accepted)
-    consent_data = cookie_manager.get("nync_consent")
-    if consent_data:
-        st.session_state.consent = consent_data
-        return
+    # We read the cookie directly to avoid showing popup if already accepted
+    try:
+        consent_data = cookie_manager.get("nync_consent")
+        if consent_data:
+            st.session_state.consent = consent_data
+            return
+    except:
+        pass # If error reading, show popup just in case
 
-    # 2. CSS TO FLOAT ONLY THE INNERMOST CONTAINER
-    # The selector :not(:has(...)) ensures we only target the container that holds the marker 
-    # but DOES NOT hold another container. This targets the "leaf" node (our popup).
+    # 2. CREATE A 'FLOATABLE' CONTAINER
+    # We use st.columns(1) because it creates a unique 'stColumn' wrapper in the HTML
+    # that is easier to target with CSS than a generic container.
+    popup_col = st.columns(1)[0]
+    
+    with popup_col:
+        # Marker ID for CSS to find
+        st.markdown('<div id="cookie-popup-anchor"></div>', unsafe_allow_html=True)
+        
+        with st.container():
+            c_icon, c_text = st.columns([1, 5])
+            with c_icon:
+                st.write("🍪")
+            with c_text:
+                st.write("**Privacy Settings**")
+                st.caption("We use cookies to improve your experience.")
+            
+            with st.expander("Preferences", expanded=False):
+                st.checkbox("Essential", value=True, disabled=True, key="ck_ess")
+                analytics = st.checkbox("Analytics", value=True, key="ck_ana")
+                marketing = st.checkbox("Marketing", value=True, key="ck_mkt")
+
+            # Buttons
+            b1, b2 = st.columns(2)
+            with b1:
+                if st.button("Accept All", key="btn_accept", type="primary", use_container_width=True):
+                    save_preference(cookie_manager, True, True)
+            with b2:
+                if st.button("Reject", key="btn_reject", use_container_width=True):
+                    save_preference(cookie_manager, False, False)
+
+    # 3. CSS TO FLOAT THE COLUMN
     st.markdown("""
     <style>
-        /* 1. Target the specific vertical block containing our ID marker */
-        /* We use 'div[data-testid="stVerticalBlock"]' which represents a st.container() */
-        div[data-testid="stVerticalBlock"]:has(span#cookie-consent-marker):not(:has(div[data-testid="stVerticalBlock"])) {
+        /* Target the specific column containing our anchor ID */
+        div[data-testid="stColumn"]:has(div#cookie-popup-anchor) {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            width: 380px !important; /* Force small width */
+            bottom: 1rem;
+            right: 1rem;
+            width: 320px !important;
             max-width: 90vw;
-            background-color: #111111;
+            background-color: #0e0e0e; /* Dark background */
             border: 1px solid #333;
             border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0px 10px 40px rgba(0,0,0,0.8);
-            z-index: 999999; /* Always on top */
-            gap: 1rem;
-        }
-
-        /* 2. Mobile Adjustment: Dock to bottom full width */
-        @media (max-width: 600px) {
-            div[data-testid="stVerticalBlock"]:has(span#cookie-consent-marker):not(:has(div[data-testid="stVerticalBlock"])) {
-                bottom: 0;
-                right: 0;
-                left: 0;
-                width: 100% !important;
-                border-radius: 12px 12px 0 0;
-                border-bottom: none;
-                padding-bottom: 2rem;
-            }
+            padding: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            z-index: 999999; /* Ensure it's on top */
+            flex: none !important; /* Stop Streamlit from stretching it */
         }
         
-        /* 3. Hide the anchor span itself */
-        span#cookie-consent-marker {
-            display: none;
+        /* Hide the anchor helper */
+        div#cookie-popup-anchor { display: none; }
+
+        /* Mobile Adjustments */
+        @media (max-width: 600px) {
+            div[data-testid="stColumn"]:has(div#cookie-popup-anchor) {
+                left: 1rem;
+                right: 1rem;
+                bottom: 1rem;
+                width: auto !important;
+            }
         }
     </style>
     """, unsafe_allow_html=True)
 
-    # 3. THE POPUP CONTENT
-    # We use a container to group our elements. The CSS above targets THIS container.
-    with st.container():
-        # Unique Anchor ID for the CSS to find
-        st.markdown('<span id="cookie-consent-marker"></span>', unsafe_allow_html=True)
-        
-        # Header
-        c_text, c_icon = st.columns([5, 1])
-        with c_text:
-            st.write("#### 🍪 Privacy Settings")
-            st.caption("We use cookies to enhance your experience.")
-        with c_icon:
-            st.write("🔒")
-        
-        # Options (Collapsible to keep it small)
-        with st.expander("Customize", expanded=False):
-            st.checkbox("Essential", value=True, disabled=True, key="ck_ess")
-            analytics = st.checkbox("Analytics", value=True, key="ck_ana", help="Helps us improve.")
-            marketing = st.checkbox("Marketing", value=True, key="ck_mkt", help="Upgrade offers.")
-
-        st.write("") # Small spacer
-
-        # Buttons
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Accept All", type="primary", use_container_width=True):
-                save_preference(cookie_manager, True, True)
-                
-        with c2:
-            if st.button("Reject Optional", use_container_width=True):
-                save_preference(cookie_manager, False, False)
-
 def save_preference(cookie_manager, analytics, marketing):
-    """Saves the cookie and reloads the app"""
+    """Saves the preference cookie and reloads."""
     preference = {
         "essential": True,
         "analytics": analytics,
@@ -93,16 +87,20 @@ def save_preference(cookie_manager, analytics, marketing):
         "timestamp": str(dt.datetime.now())
     }
     
-    # 1. Set the cookie (valid for 1 year)
+    # 1. Set expiration (1 year)
     expires = dt.datetime.now() + dt.timedelta(days=365)
+    
+    # 2. Write Cookie
     cookie_manager.set("nync_consent", preference, expires_at=expires)
     
-    # 2. Update Session State immediately so UI reacts
+    # 3. Update Session State (Immediate UI feedback)
     st.session_state.consent = preference
     
-    # 3. CRITICAL: Wait for cookie to be written to browser
-    # The cookie manager needs a split second to sync with the frontend before we reload.
-    time.sleep(0.5)
+    # 4. Success Message
+    st.toast("Preferences Saved!")
     
-    # 4. Reload the app to hide the popup
+    # 5. WAIT for Browser Sync (Critical for button to 'work')
+    time.sleep(1) 
+    
+    # 6. Reload
     st.rerun()
