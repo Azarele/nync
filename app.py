@@ -3,9 +3,7 @@ import time
 import base64
 import html
 import auth_utils as auth
-# IMPORT COOKIE MANAGER
 import extra_streamlit_components as stx
-# IMPORT NEW CONSENT MODULE
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent
 import datetime as dt
 
@@ -36,13 +34,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. INIT COOKIE MANAGER (PERSISTENT LOGIN)
+# 2. INIT COOKIE MANAGER (FIXED: UNIQUE KEYS)
+# We initialize it once, but we use explicit keys for operations to avoid conflicts
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
-# 3. ACCESS COOKIES (FIXED: Direct access to avoid duplicate render)
-# We do NOT call get_all() here because __init__ already did it.
+# 3. FETCH COOKIES ONCE
+# Use a specific key for this fetch to avoid ID collision
 time.sleep(0.1) 
-all_cookies = cookie_manager.cookies or {}
+all_cookies = cookie_manager.get_all(key="init_get")
 
 # 4. SESSION INIT
 if 'session' not in st.session_state: st.session_state.session = None
@@ -63,8 +62,9 @@ if not st.session_state.session:
                 st.session_state.user = session.user
                 st.rerun()
         except:
-            if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token")
-            if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token")
+            # Clean up invalid cookies using a unique key
+            cookie_manager.delete("sb_access_token", key="clean_1")
+            cookie_manager.delete("sb_refresh_token", key="clean_2")
 
 # 5. GLOBAL QUERY PARAMS
 if "vote" in st.query_params and not st.session_state.session:
@@ -122,8 +122,9 @@ if "code" in st.query_params:
 
                 # --- SAVE APP SESSION COOKIES (PERSISTENCE) ---
                 expires = dt.datetime.now() + dt.timedelta(days=30)
-                cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires)
-                cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires)
+                # Use unique key 'auth_set'
+                cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires, key="auth_set_1")
+                cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires, key="auth_set_2")
                 
                 st.query_params.clear()
                 st.rerun()
@@ -139,8 +140,8 @@ if not st.session_state.session:
     if st.session_state.session:
         s = st.session_state.session
         expires = dt.datetime.now() + dt.timedelta(days=30)
-        cookie_manager.set("sb_access_token", s.access_token, expires_at=expires)
-        cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=expires)
+        cookie_manager.set("sb_access_token", s.access_token, expires_at=expires, key="manual_set_1")
+        cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=expires, key="manual_set_2")
         st.rerun()
 
 # C: DASHBOARD
@@ -195,9 +196,9 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
-            # CLEAR COOKIES ON LOGOUT (SAFE WAY)
-            if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token")
-            if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token")
+            # Use unique keys for logout deletion
+            cookie_manager.delete("sb_access_token", key="logout_1")
+            cookie_manager.delete("sb_refresh_token", key="logout_2")
             
             auth.supabase.auth.sign_out()
             st.session_state.session = None

@@ -1,10 +1,8 @@
 import streamlit as st
-import stripe
 import requests
 import datetime as dt
-from dateutil import parser
+import stripe
 from supabase import create_client
-import extra_streamlit_components as stx
 
 # --- DATABASE CONNECTION ---
 @st.cache_resource
@@ -44,7 +42,7 @@ def get_user_profile(user_id):
     try: return supabase.table('profiles').select('*').eq('id', user_id).single().execute().data
     except: return None
 
-# --- NEW FUNCTION: TIER LEVEL ---
+# --- MISSING FUNCTION ADDED HERE ---
 def get_tier_level(tier_name):
     """Converts tier name to a number for comparison"""
     tiers = {'free': 0, 'squad': 1, 'guild': 2, 'empire': 3}
@@ -153,30 +151,6 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
                 curr += dt.timedelta(hours=1)
         return blocked_hours
     except: return []
-
-def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
-    if not supabase: return False
-    try:
-        token = refresh_outlook_token(user_id) 
-        if not token: return False
-
-        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
-        
-        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees]
-
-        payload = {
-            "subject": subject,
-            "start": {"dateTime": start_dt_utc.isoformat(), "timeZone": "UTC"},
-            "end": {"dateTime": end_dt_utc.isoformat(), "timeZone": "UTC"},
-            "attendees": attendee_list,
-            "isOnlineMeeting": True, 
-            "onlineMeetingProvider": "teamsForBusiness" 
-        }
-
-        r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
-        return r.status_code in [201, 200]
-    except: return False
 
 # --- GOOGLE AUTH ---
 def get_google_url():

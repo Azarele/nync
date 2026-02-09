@@ -24,7 +24,8 @@ def cookie_dialog(cookie_manager):
                 "marketing": True,
                 "timestamp": str(dt.datetime.now())
             }
-            save_consent(cookie_manager, preferences)
+            # Use unique key for the set operation
+            save_consent(cookie_manager, preferences, "consent_set_all")
             
     with c2:
         if st.button("Save Selected", use_container_width=True):
@@ -34,7 +35,8 @@ def cookie_dialog(cookie_manager):
                 "marketing": marketing,
                 "timestamp": str(dt.datetime.now())
             }
-            save_consent(cookie_manager, preferences)
+            # Use unique key for the set operation
+            save_consent(cookie_manager, preferences, "consent_set_select")
 
 # 2. MAIN FUNCTION CALLED BY APP.PY
 def show(cookie_manager, cookies):
@@ -54,13 +56,13 @@ def show(cookie_manager, cookies):
         cookie_dialog(cookie_manager)
 
 # 3. SAVE LOGIC
-def save_consent(cookie_manager, preferences):
+def save_consent(cookie_manager, preferences, unique_key):
     # 1. Update Session State FIRST (Instant UI update)
     st.session_state.consent = preferences
     
-    # 2. Save to Browser Cookie (Valid 1 Year)
+    # 2. Save to Browser Cookie (Valid 1 Year) with UNIQUE KEY
     expires = dt.datetime.now() + dt.timedelta(days=365)
-    cookie_manager.set("nync_consent", preferences, expires_at=expires)
+    cookie_manager.set("nync_consent", preferences, expires_at=expires, key=unique_key)
     
     # 3. Show Success
     st.success("Preferences Saved!")
