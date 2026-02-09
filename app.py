@@ -3,10 +3,10 @@ import time
 import base64
 import html
 import auth_utils as auth
-import datetime as dt
 # IMPORT COOKIE MANAGER
 import extra_streamlit_components as stx
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide
+import datetime as dt
 
 # 1. SETUP
 try:
@@ -36,7 +36,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. INIT COOKIE MANAGER (PERSISTENT LOGIN)
-@st.cache_resource(experimental_allow_widgets=True)
+# FIX: Removed 'experimental_allow_widgets=True' which caused the crash
+@st.cache_resource
 def get_manager():
     return stx.CookieManager()
 
@@ -48,20 +49,22 @@ if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 
 # --- CHECK COOKIES FOR EXISTING SESSION ---
+# We verify cookies ONLY if the user is not already logged in
 if not st.session_state.session:
-    # Give the cookie manager a moment to load
-    time.sleep(0.1) 
+    # Give the cookie manager a moment to connect
+    time.sleep(0.1)
     cookies = cookie_manager.get_all()
     
     if "sb_access_token" in cookies and "sb_refresh_token" in cookies:
         try:
+            # Attempt to restore the session using the tokens from the cookie
             session = auth.restore_session(cookies["sb_access_token"], cookies["sb_refresh_token"])
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
                 st.rerun()
         except:
-            # If cookies are invalid/expired, delete them
+            # If tokens are invalid/expired, clear them
             cookie_manager.delete("sb_access_token")
             cookie_manager.delete("sb_refresh_token")
 
@@ -120,8 +123,10 @@ if "code" in st.query_params:
                 auth.save_google_token(res.user.id, res.session)
 
                 # --- SAVE APP SESSION COOKIES (PERSISTENCE) ---
-                cookie_manager.set("sb_access_token", res.session.access_token, expires_at=dt.datetime.now() + dt.timedelta(days=30))
-                cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=dt.datetime.now() + dt.timedelta(days=30))
+                # Expires in 30 days
+                expires = dt.datetime.now() + dt.timedelta(days=30)
+                cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires)
+                cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires)
                 
                 st.query_params.clear()
                 st.rerun()
@@ -132,18 +137,18 @@ if "code" in st.query_params:
 # B: LOGIN PAGE
 if not st.session_state.session:
     login.show()
+    
     # Check if a manual email/pass login just happened inside login.show()
-    # (You might need to update login.py to return the session, or check session state here)
+    # (If the user logged in via the login form, st.session_state.session is now set)
     if st.session_state.session:
-        # Save cookies for manual login
         s = st.session_state.session
-        cookie_manager.set("sb_access_token", s.access_token, expires_at=dt.datetime.now() + dt.timedelta(days=30))
-        cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=dt.datetime.now() + dt.timedelta(days=30))
+        expires = dt.datetime.now() + dt.timedelta(days=30)
+        cookie_manager.set("sb_access_token", s.access_token, expires_at=expires)
+        cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=expires)
         st.rerun()
 
 # C: DASHBOARD
 else:
-    # ... (Rest of your dashboard code remains exactly the same) ...
     # --- HANDLE PENDING INVITES ---
     if 'pending_invite' in st.session_state:
         code = st.session_state.pending_invite
@@ -193,7 +198,6 @@ else:
             st.session_state.user = None
             st.rerun()
     
-    # ... (The rest of your app logic) ...
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
 
     nav = st.session_state.nav
