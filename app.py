@@ -39,11 +39,10 @@ st.markdown("""
 # 2. INIT COOKIE MANAGER (PERSISTENT LOGIN)
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
-# 3. FETCH COOKIES ONCE (CRITICAL FIX)
-# We fetch them here and pass the 'all_cookies' dictionary to other functions.
-# This prevents calling .get_all() multiple times which causes DuplicateElementKey error.
+# 3. ACCESS COOKIES (FIXED: Direct access to avoid duplicate render)
+# We do NOT call get_all() here because __init__ already did it.
 time.sleep(0.1) 
-all_cookies = cookie_manager.get_all()
+all_cookies = cookie_manager.cookies or {}
 
 # 4. SESSION INIT
 if 'session' not in st.session_state: st.session_state.session = None
@@ -52,11 +51,9 @@ if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 if 'consent' not in st.session_state: st.session_state.consent = None 
 
 # --- SHOW COOKIE CONSENT POPUP ---
-# Pass the 'all_cookies' we just fetched so the module doesn't have to fetch them again
 cookie_consent.show(cookie_manager, all_cookies)
 
 # --- CHECK COOKIES FOR EXISTING SESSION ---
-# Use 'all_cookies' variable instead of calling get_all() again
 if not st.session_state.session:
     if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
         try:
@@ -66,7 +63,6 @@ if not st.session_state.session:
                 st.session_state.user = session.user
                 st.rerun()
         except:
-            # If tokens are invalid/expired, clear them
             if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token")
             if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token")
 

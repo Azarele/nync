@@ -44,6 +44,12 @@ def get_user_profile(user_id):
     try: return supabase.table('profiles').select('*').eq('id', user_id).single().execute().data
     except: return None
 
+# --- NEW FUNCTION: TIER LEVEL ---
+def get_tier_level(tier_name):
+    """Converts tier name to a number for comparison"""
+    tiers = {'free': 0, 'squad': 1, 'guild': 2, 'empire': 3}
+    return tiers.get(str(tier_name).lower(), 0)
+
 # --- MICROSOFT AUTH ---
 def get_microsoft_url(user_id):
     try:
@@ -78,7 +84,6 @@ def handle_microsoft_callback(code, user_id):
             "expires_in": tokens.get("expires_in")
         }
         
-        # Save to Database
         try:
             existing = supabase.table("calendar_connections").select("id").eq("user_id", user_id).eq("provider", "outlook").execute()
             if existing.data:
@@ -88,17 +93,6 @@ def handle_microsoft_callback(code, user_id):
             return True
         except: return False
     except: return False
-
-def restore_session(access_token, refresh_token):
-    if not supabase: return None
-    try:
-        # Tell Supabase to reuse the tokens we found in the cookie
-        res = supabase.auth.set_session(access_token, refresh_token)
-        if res.user:
-            return res.session
-    except:
-        return None
-    return None
 
 def refresh_outlook_token(user_id):
     if not supabase: return None
@@ -303,8 +297,18 @@ def fetch_google_events(user_id, start_dt, end_dt):
         return blocked_hours
     except: return []
 
+def restore_session(access_token, refresh_token):
+    if not supabase: return None
+    try:
+        res = supabase.auth.set_session(access_token, refresh_token)
+        if res.user:
+            return res.session
+    except:
+        return None
+    return None
+
 # --- TEAM & UTILS ---
-@st.cache_data(ttl=60) # <--- THIS WAS THE MISSING FUNCTION CAUSING YOUR ERROR
+@st.cache_data(ttl=60)
 def get_martyr_stats(team_id):
     if not supabase: return []
     try:
