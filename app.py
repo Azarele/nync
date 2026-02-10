@@ -48,7 +48,6 @@ if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 if 'consent' not in st.session_state: st.session_state.consent = None 
 
 # --- SHOW COOKIE CONSENT POPUP ---
-# Only show if not already consented (checked in module)
 cookie_consent.show(cookie_manager, all_cookies)
 
 # --- CHECK COOKIES FOR EXISTING SESSION ---
@@ -61,16 +60,13 @@ if not st.session_state.session:
                 st.session_state.user = session.user
                 
                 # --- CRITICAL FIX: TOKEN ROTATION ---
-                # If Supabase gives us a new token, we MUST save it, or the NEXT refresh will fail.
-                # We check if the token in memory (session) matches the one in the cookie.
-                if session.access_token != all_cookies["sb_access_token"]:
+                # If Supabase rotated the token, we save the new one.
+                # WE DO NOT RERUN. We let the app fall through to the dashboard.
+                # This ensures the browser has infinite time to save the cookie.
+                if session.refresh_token != all_cookies.get("sb_refresh_token"):
                     expires = dt.datetime.now() + dt.timedelta(days=30)
                     cookie_manager.set("sb_access_token", session.access_token, expires_at=expires, key="renew_acc")
                     cookie_manager.set("sb_refresh_token", session.refresh_token, expires_at=expires, key="renew_ref")
-                    # Small wait to ensure write
-                    time.sleep(0.1)
-                
-                st.rerun()
         except:
             # Clean up invalid cookies
             cookie_manager.delete("sb_access_token", key="clean_1")
@@ -136,8 +132,8 @@ if "code" in st.query_params:
                 cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires, key="auth_set_2")
                 
                 st.success("✅ Logged in!")
-                # CRITICAL: Wait 2 seconds for browser to actually save the cookie before redirecting
-                time.sleep(2)
+                # Wait 3 seconds to guarantee cookie write before URL clear
+                time.sleep(3)
                 
                 st.query_params.clear()
                 st.rerun()
@@ -161,7 +157,8 @@ if not st.session_state.session:
         cookie_manager.set("sb_access_token", s.access_token, expires_at=expires, key="manual_set_1")
         cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=expires, key="manual_set_2")
         
-        # Give the browser a moment to write cookies
+        # Don't rerun immediately, let the dashboard render
+        st.toast("Welcome back!")
         time.sleep(1)
         st.rerun()
 
@@ -189,7 +186,6 @@ else:
     profile = auth.get_user_profile(st.session_state.user.id)
     tier = profile.get('subscription_tier', 'free').upper() if profile else "FREE"
 
-    # Show ad only if: Tier is FREE AND they accepted 'marketing' cookies
     if tier == "FREE" and user_consent and user_consent.get("marketing", False):
         st.info("💡 **Tip:** Upgrade to **Squad Tier** to remove ads and unlock unlimited teams. [View Pricing](#)", icon="🚀")
 
@@ -217,10 +213,8 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
-            # Use unique keys for logout deletion
             cookie_manager.delete("sb_access_token", key="logout_1")
             cookie_manager.delete("sb_refresh_token", key="logout_2")
-            
             auth.supabase.auth.sign_out()
             st.session_state.session = None
             st.session_state.user = None

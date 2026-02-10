@@ -22,17 +22,17 @@ def cookie_dialog(cookie_manager):
             save_consent(cookie_manager, {"essential": True, "analytics": analytics, "marketing": marketing, "timestamp": str(dt.datetime.now())}, "consent_set_select")
 
 def show(cookie_manager, cookies):
-    # 1. CHECK SESSION STATE (Instant check)
-    if st.session_state.get("consent"):
-        return
-
-    # 2. CHECK BROWSER COOKIES (Persistent check)
-    # If the cookie exists in the browser, load it and STOP.
+    # 1. IMMEDIATE CHECK: Do we have the cookie in the browser?
+    # If yes, load it into session and DO NOT show dialog.
     if "nync_consent" in cookies and cookies["nync_consent"]:
         st.session_state.consent = cookies["nync_consent"]
         return
 
-    # 3. ONLY SHOW DIALOG IF NEITHER EXISTS
+    # 2. SESSION CHECK: Did we already click accept this run?
+    if st.session_state.get("consent"):
+        return
+
+    # 3. SHOW DIALOG (Only if neither above is true)
     if not st.session_state.get("cookie_dialog_shown"):
         st.session_state.cookie_dialog_shown = True
         cookie_dialog(cookie_manager)
@@ -46,5 +46,6 @@ def save_consent(cookie_manager, preferences, unique_key):
     cookie_manager.set("nync_consent", preferences, expires_at=expires, key=unique_key)
     
     st.success("Preferences Saved!")
-    time.sleep(1.5) # Wait for browser to write cookie
+    # Wait 2 seconds to ensure write before reload
+    time.sleep(2) 
     st.rerun()
