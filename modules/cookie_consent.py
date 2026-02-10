@@ -66,7 +66,9 @@ def save_consent(cookie_manager, preferences, unique_key):
     
     # 3. Show Success
     st.success("Preferences Saved!")
-    time.sleep(0.5)
+    
+    # CRITICAL: Wait 1 full second for browser sync
+    time.sleep(1)
     
     # 4. Rerun to close the dialog
     st.rerun()

@@ -38,6 +38,7 @@ st.markdown("""
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 3. FETCH COOKIES ONCE
+# Give the component a moment to mount
 time.sleep(0.1) 
 all_cookies = cookie_manager.get_all(key="init_get")
 
@@ -122,6 +123,10 @@ if "code" in st.query_params:
                 expires = dt.datetime.now() + dt.timedelta(days=30)
                 cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires, key="auth_set_1")
                 cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires, key="auth_set_2")
+                
+                # CRITICAL FIX: WAIT FOR BROWSER TO SAVE COOKIES
+                st.success("✅ Logged in!")
+                time.sleep(2)  # Wait 2 seconds
                 
                 st.query_params.clear()
                 st.rerun()
