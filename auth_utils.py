@@ -24,7 +24,7 @@ def login_user(email, password):
         if res.session:
             st.session_state.session = res.session
             st.session_state.user = res.user
-            return True # <--- RETURNS TRUE, DOES NOT RERUN
+            return True
     except Exception as e: 
         st.warning(f"Login failed: {e}")
     return False
@@ -36,7 +36,7 @@ def signup_user(email, password):
         if res.session:
             st.session_state.session = res.session
             st.session_state.user = res.user
-            return True # <--- RETURNS TRUE
+            return True
         else: 
             st.info("Check email to confirm.")
     except Exception as e: 

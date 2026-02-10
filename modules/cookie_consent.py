@@ -22,19 +22,29 @@ def cookie_dialog(cookie_manager):
             save_consent(cookie_manager, {"essential": True, "analytics": analytics, "marketing": marketing, "timestamp": str(dt.datetime.now())}, "consent_set_select")
 
 def show(cookie_manager, cookies):
-    if st.session_state.get("consent"): return
-    if "nync_consent" in cookies:
+    # 1. CHECK SESSION STATE (Instant check)
+    if st.session_state.get("consent"):
+        return
+
+    # 2. CHECK BROWSER COOKIES (Persistent check)
+    # If the cookie exists in the browser, load it and STOP.
+    if "nync_consent" in cookies and cookies["nync_consent"]:
         st.session_state.consent = cookies["nync_consent"]
         return
 
+    # 3. ONLY SHOW DIALOG IF NEITHER EXISTS
     if not st.session_state.get("cookie_dialog_shown"):
         st.session_state.cookie_dialog_shown = True
         cookie_dialog(cookie_manager)
 
 def save_consent(cookie_manager, preferences, unique_key):
+    # Update Session immediately to hide UI
     st.session_state.consent = preferences
+    
+    # Save to browser
     expires = dt.datetime.now() + dt.timedelta(days=365)
     cookie_manager.set("nync_consent", preferences, expires_at=expires, key=unique_key)
+    
     st.success("Preferences Saved!")
-    time.sleep(10) # Increased wait time
+    time.sleep(1.5) # Wait for browser to write cookie
     st.rerun()

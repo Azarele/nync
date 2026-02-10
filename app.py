@@ -38,7 +38,6 @@ st.markdown("""
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 3. FETCH COOKIES ONCE
-# Give the component a moment to mount
 time.sleep(0.1) 
 all_cookies = cookie_manager.get_all(key="init_get")
 
@@ -49,6 +48,7 @@ if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 if 'consent' not in st.session_state: st.session_state.consent = None 
 
 # --- SHOW COOKIE CONSENT POPUP ---
+# Only show if not already consented (checked in module)
 cookie_consent.show(cookie_manager, all_cookies)
 
 # --- CHECK COOKIES FOR EXISTING SESSION ---
@@ -59,9 +59,20 @@ if not st.session_state.session:
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
+                
+                # --- CRITICAL FIX: TOKEN ROTATION ---
+                # If Supabase gives us a new token, we MUST save it, or the NEXT refresh will fail.
+                # We check if the token in memory (session) matches the one in the cookie.
+                if session.access_token != all_cookies["sb_access_token"]:
+                    expires = dt.datetime.now() + dt.timedelta(days=30)
+                    cookie_manager.set("sb_access_token", session.access_token, expires_at=expires, key="renew_acc")
+                    cookie_manager.set("sb_refresh_token", session.refresh_token, expires_at=expires, key="renew_ref")
+                    # Small wait to ensure write
+                    time.sleep(0.1)
+                
                 st.rerun()
         except:
-            # Clean up invalid cookies using a unique key
+            # Clean up invalid cookies
             cookie_manager.delete("sb_access_token", key="clean_1")
             cookie_manager.delete("sb_refresh_token", key="clean_2")
 
@@ -124,9 +135,9 @@ if "code" in st.query_params:
                 cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires, key="auth_set_1")
                 cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires, key="auth_set_2")
                 
-                # CRITICAL FIX: WAIT FOR BROWSER TO SAVE COOKIES
                 st.success("✅ Logged in!")
-                time.sleep(2)  # Wait 2 seconds
+                # CRITICAL: Wait 2 seconds for browser to actually save the cookie before redirecting
+                time.sleep(2)
                 
                 st.query_params.clear()
                 st.rerun()
