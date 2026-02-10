@@ -7,10 +7,9 @@ def show():
     
     with c2:
         # --- LOGO CENTERING ---
-        sc1, sc2, sc3 = st.columns([1, 1, 1]) # Adjusted to 1,1,1 for better centering
+        sc1, sc2, sc3 = st.columns([1, 1, 1])
         with sc2:
             try:
-                # Fixed: width='stretch' is invalid, used use_container_width=True
                 st.image("nync_marketing.png", use_container_width=True) 
             except:
                 st.header("⚡")
@@ -29,14 +28,18 @@ def show():
                 email = st.text_input("Email", key="login_email")
                 password = st.text_input("Password", type="password", key="login_pass")
                 
-                # Fixed: width='stretch' -> use_container_width=True
+                # ADDED: Remember Me Checkbox
+                remember = st.checkbox("Remember Me", value=True, key="remember_me")
+                
                 submitted = st.form_submit_button("Log In", type="primary", use_container_width=True)
                 
                 if submitted:
                     if not email or not password:
                         st.warning("⚠️ Please enter email and password.")
                     else:
-                        auth.login_user(email, password)
+                        if auth.login_user(email, password):
+                            # We don't rerun here. App.py will handle the cookie setting.
+                            st.success("Logged in!")
             
             st.write("---")
             
@@ -57,4 +60,5 @@ def show():
                     if not email or not password:
                         st.warning("⚠️ Please enter email and password.")
                     else:
-                        auth.signup_user(email, password)
+                        if auth.signup_user(email, password):
+                            st.success("Account created!")

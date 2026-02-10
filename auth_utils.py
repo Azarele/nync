@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
-import datetime as dt
 import stripe
+import datetime as dt
 from supabase import create_client
 
 # --- DATABASE CONNECTION ---
@@ -18,31 +18,36 @@ supabase = get_supabase()
 
 # --- AUTH HELPER FUNCTIONS ---
 def login_user(email, password):
-    if not supabase: return
+    if not supabase: return False
     try:
         res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        st.session_state.session = res.session
-        st.session_state.user = res.user
-        st.rerun()
-    except Exception as e: st.error(f"Login failed: {e}")
+        if res.session:
+            st.session_state.session = res.session
+            st.session_state.user = res.user
+            return True # <--- CHANGED: Return True instead of rerun
+    except Exception as e: 
+        st.warning(f"Login failed: {e}")
+    return False
 
 def signup_user(email, password):
-    if not supabase: return
+    if not supabase: return False
     try:
         res = supabase.auth.sign_up({"email": email, "password": password})
         if res.session:
             st.session_state.session = res.session
             st.session_state.user = res.user
-            st.rerun()
-        else: st.info("Check email to confirm.")
-    except Exception as e: st.error(f"Sign up failed: {e}")
+            return True # <--- CHANGED: Return True instead of rerun
+        else: 
+            st.info("Check email to confirm.")
+    except Exception as e: 
+        st.warning(f"Sign up failed: {e}")
+    return False
 
 @st.cache_data(ttl=300)
 def get_user_profile(user_id):
     try: return supabase.table('profiles').select('*').eq('id', user_id).single().execute().data
     except: return None
 
-# --- MISSING FUNCTION ADDED HERE ---
 def get_tier_level(tier_name):
     """Converts tier name to a number for comparison"""
     tiers = {'free': 0, 'squad': 1, 'guild': 2, 'empire': 3}
@@ -151,6 +156,30 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
                 curr += dt.timedelta(hours=1)
         return blocked_hours
     except: return []
+
+def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
+    if not supabase: return False
+    try:
+        token = refresh_outlook_token(user_id) 
+        if not token: return False
+
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
+        
+        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees]
+
+        payload = {
+            "subject": subject,
+            "start": {"dateTime": start_dt_utc.isoformat(), "timeZone": "UTC"},
+            "end": {"dateTime": end_dt_utc.isoformat(), "timeZone": "UTC"},
+            "attendees": attendee_list,
+            "isOnlineMeeting": True, 
+            "onlineMeetingProvider": "teamsForBusiness" 
+        }
+
+        r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
+        return r.status_code in [201, 200]
+    except: return False
 
 # --- GOOGLE AUTH ---
 def get_google_url():

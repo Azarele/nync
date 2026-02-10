@@ -34,12 +34,10 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 2. INIT COOKIE MANAGER (FIXED: UNIQUE KEYS)
-# We initialize it once, but we use explicit keys for operations to avoid conflicts
+# 2. INIT COOKIE MANAGER
 cookie_manager = stx.CookieManager(key="cookie_manager")
 
 # 3. FETCH COOKIES ONCE
-# Use a specific key for this fetch to avoid ID collision
 time.sleep(0.1) 
 all_cookies = cookie_manager.get_all(key="init_get")
 
@@ -122,7 +120,6 @@ if "code" in st.query_params:
 
                 # --- SAVE APP SESSION COOKIES (PERSISTENCE) ---
                 expires = dt.datetime.now() + dt.timedelta(days=30)
-                # Use unique key 'auth_set'
                 cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires, key="auth_set_1")
                 cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires, key="auth_set_2")
                 
@@ -136,12 +133,20 @@ if "code" in st.query_params:
 if not st.session_state.session:
     login.show()
     
-    # Check if a manual email/pass login just happened inside login.show()
+    # CHECK IF MANUAL LOGIN HAPPENED
     if st.session_state.session:
+        # Check the 'Remember Me' state (default to True if not set)
+        remember = st.session_state.get("remember_me", True)
+        
+        # Calculate expiry: 30 days if remembered, None (Session) if not
+        expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
+        
         s = st.session_state.session
-        expires = dt.datetime.now() + dt.timedelta(days=30)
         cookie_manager.set("sb_access_token", s.access_token, expires_at=expires, key="manual_set_1")
         cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=expires, key="manual_set_2")
+        
+        # Give the browser a moment to write cookies
+        time.sleep(1)
         st.rerun()
 
 # C: DASHBOARD
