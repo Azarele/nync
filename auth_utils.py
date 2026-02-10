@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
-import stripe
 import datetime as dt
+import stripe
 from supabase import create_client
 
 # --- DATABASE CONNECTION ---
@@ -24,7 +24,7 @@ def login_user(email, password):
         if res.session:
             st.session_state.session = res.session
             st.session_state.user = res.user
-            return True # <--- CHANGED: Return True instead of rerun
+            return True # <--- RETURNS TRUE, DOES NOT RERUN
     except Exception as e: 
         st.warning(f"Login failed: {e}")
     return False
@@ -36,7 +36,7 @@ def signup_user(email, password):
         if res.session:
             st.session_state.session = res.session
             st.session_state.user = res.user
-            return True # <--- CHANGED: Return True instead of rerun
+            return True # <--- RETURNS TRUE
         else: 
             st.info("Check email to confirm.")
     except Exception as e: 
