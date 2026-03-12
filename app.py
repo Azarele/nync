@@ -46,7 +46,8 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. INIT STATE & COOKIE MANAGER
-if 'app_ready' not in st.session_state: st.session_state.app_ready = False
+# We use a Phase system: 0 (Wait for Cookies) -> 1 (Restore Session) -> 2 (Ready)
+if 'app_init_phase' not in st.session_state: st.session_state.app_init_phase = 0
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
@@ -54,15 +55,8 @@ if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
-# Initial Startup Loader (gives browser time to pass cookies to Python)
-if not st.session_state.app_ready:
-    st.markdown("<div class='nync-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
-    time.sleep(0.5)
-    st.session_state.app_ready = True
-    st.rerun()
-
-# 3. OAUTH CALLBACKS
-if "code" in st.query_params:
+# 3. OAUTH CALLBACKS (Catch URL tokens immediately)
+if "code" in st.query_params and st.session_state.app_init_phase == 2:
     code = st.query_params["code"]
     state_param = st.query_params.get("state", "")
     
@@ -76,49 +70,92 @@ if "code" in st.query_params:
         st.query_params.clear()
         st.rerun()
     else:
-        # Google Auth
         try:
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
             if res.session:
                 st.session_state.session = res.session
                 st.session_state.user = res.user
                 auth.save_google_token(res.user.id, res.session)
-                st.session_state.sync_cookies = True
+                st.session_state.sync_cookies = True # Tells the loader block to save it
         except:
             st.error("Login Failed.")
         st.query_params.clear()
         st.rerun()
 
-# 4. RESTORE SESSION (If no active session, check cookies)
-# CRITICAL FIX: Skip restore if we just pressed the logout button
-if not st.session_state.session and not st.session_state.get("clear_cookies"):
-    if "sb_access_token" in cookies and "sb_refresh_token" in cookies:
+# 4. LOADER STATE MACHINE (Controls all transitions)
+is_loading = False
+load_msg = ""
+
+# Determine which loader to show based on what we are doing
+if st.session_state.app_init_phase == 0:
+    is_loading = True
+    load_msg = "Loading Nync..."
+elif st.session_state.app_init_phase == 1:
+    if "sb_access_token" in cookies and not st.session_state.session:
+        is_loading = True
+        load_msg = "Restoring session..."
+    else:
+        st.session_state.app_init_phase = 2
+
+if st.session_state.get("clear_cookies"):
+    is_loading = True
+    load_msg = "Logging out safely..."
+
+if st.session_state.get("sync_cookies"):
+    is_loading = True
+    load_msg = "Securing session..."
+
+# Render Loader & Execute Background Action
+if is_loading:
+    st.markdown(f"<div class='nync-loader'><div class='nync-spinner'></div><h3>{load_msg}</h3></div>", unsafe_allow_html=True)
+    
+    if st.session_state.app_init_phase == 0:
+        time.sleep(0.5) # Give the browser time to pass cookies to Python
+        st.session_state.app_init_phase = 1
+        st.rerun()
+        
+    elif st.session_state.app_init_phase == 1:
+        # Actually perform the session restore while the loading screen is up
         session = auth.restore_session(cookies["sb_access_token"], cookies["sb_refresh_token"])
         if session:
             st.session_state.session = session
             st.session_state.user = session.user
-        else:
-            st.session_state.clear_cookies = True
+        st.session_state.app_init_phase = 2
+        time.sleep(0.8) # Keep the text on screen briefly for smooth UI
+        st.rerun()
+        
+    elif st.session_state.get("clear_cookies"):
+        try:
+            if "sb_access_token" in cookies: cookie_manager.delete("sb_access_token", key="del_acc")
+            if "sb_refresh_token" in cookies: cookie_manager.delete("sb_refresh_token", key="del_ref")
+        except: pass
+        st.session_state.clear_cookies = False
+        time.sleep(1.0)
+        st.rerun()
 
-# 5. BACKGROUND COOKIE SYNCING
-if st.session_state.get("clear_cookies"):
-    # Delete cookies safely
-    try:
-        if "sb_access_token" in cookies: cookie_manager.delete("sb_access_token", key="del_acc")
-        if "sb_refresh_token" in cookies: cookie_manager.delete("sb_refresh_token", key="del_ref")
-    except: pass
-    st.session_state.clear_cookies = False
-
-if st.session_state.session:
-    mem_acc = st.session_state.session.access_token
-    cook_acc = cookies.get("sb_access_token")
-    if mem_acc != cook_acc or st.session_state.get("sync_cookies"):
+    elif st.session_state.get("sync_cookies"):
+        mem_acc = st.session_state.session.access_token
         remember = st.session_state.get("remember_me", True)
         expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
         cookie_manager.set("sb_access_token", mem_acc, expires_at=expires, key="set_acc")
         cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key="set_ref")
         st.session_state.sync_cookies = False
+        time.sleep(1.0)
+        st.rerun()
+        
+    # CRITICAL: Stop execution so the app doesn't flash behind the black screen
+    st.stop()
 
+# 5. TOKEN ROTATION WATCHER
+if st.session_state.session and st.session_state.app_init_phase == 2:
+    mem_acc = st.session_state.session.access_token
+    cook_acc = cookies.get("sb_access_token")
+    # If Supabase rotated our tokens, catch it and trigger a background sync
+    if cook_acc and mem_acc != cook_acc:
+        st.session_state.sync_cookies = True
+        st.rerun()
+
+# 6. COOKIE CONSENT SAVER
 if st.session_state.get("save_consent_val"):
     val = st.session_state.save_consent_val
     expires = dt.datetime.now() + dt.timedelta(days=365)
@@ -126,8 +163,9 @@ if st.session_state.get("save_consent_val"):
     st.session_state.consent = val
     st.session_state.save_consent_val = None
 
+
 # =====================================================================
-# UI RENDERING
+# UI RENDERING (Only runs when fully loaded and idle)
 # =====================================================================
 
 if "stripe_session_id" in st.query_params and st.session_state.user:
@@ -154,7 +192,7 @@ cookie_consent.show(cookies)
 
 if not st.session_state.session:
     login.show()
-    # Catch manual logins immediately and jump to dashboard
+    # Trigger login sync loader if a manual form was submitted successfully
     if st.session_state.session:
         st.session_state.sync_cookies = True
         st.rerun()
@@ -204,12 +242,11 @@ else:
         if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
 
     with c_user:
-        # LOGOUT PROCESS
         if st.button("Log Out", key="top_logout", use_container_width=True):
             auth.supabase.auth.sign_out()
             st.session_state.session = None
             st.session_state.user = None
-            st.session_state.clear_cookies = True # Tells block 5 to wipe browser cookies
+            st.session_state.clear_cookies = True 
             st.rerun()
     
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
