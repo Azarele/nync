@@ -3,7 +3,6 @@ import auth_utils as auth
 import datetime as dt
 import time
 
-# UPDATE FUNCTION SIGNATURE TO ACCEPT COOKIE MANAGER
 def show(user, supabase, cookie_manager):
     st.header("⚙️ Settings")
     st.divider()
@@ -38,14 +37,11 @@ def show(user, supabase, cookie_manager):
     # 2. CALENDAR CONNECTIONS
     st.subheader("📅 Calendar Connections")
     
-    # --- CHECK DATABASE FOR CONNECTIONS ---
     try:
-        # Check Outlook
         o_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "outlook").execute()
         outlook_connected = len(o_conn.data) > 0
         o_date = o_conn.data[0]['created_at'][:10] if outlook_connected else ""
 
-        # Check Google
         g_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "google").execute()
         google_connected = len(g_conn.data) > 0
         g_date = g_conn.data[0]['created_at'][:10] if google_connected else ""
@@ -53,20 +49,17 @@ def show(user, supabase, cookie_manager):
         outlook_connected = False
         google_connected = False
 
-    # --- OUTLOOK STATUS CARD ---
     if outlook_connected:
         st.success(f"✅ Outlook Connected (since {o_date})")
         if st.button("Disconnect Outlook"):
             supabase.table("calendar_connections").delete().eq("user_id", user.id).eq("provider", "outlook").execute()
             st.rerun()
     else:
-        # Pass user.id so we can stash it in the redirect state
         ms_url = auth.get_microsoft_url(user.id)
         st.link_button("🔌 Connect Outlook", ms_url, type="primary")
 
-    st.write("") # Spacer
+    st.write("") 
 
-    # --- GOOGLE STATUS CARD ---
     if google_connected:
         st.success(f"✅ Google Calendar Connected (since {g_date})")
         st.caption("We have permission to scan your busy slots.")
@@ -75,39 +68,26 @@ def show(user, supabase, cookie_manager):
 
     st.divider()
 
-    # 3. PRIVACY & COOKIES (NEW SECTION)
+    # 3. PRIVACY & COOKIES (FIXED)
     st.subheader("🍪 Privacy Preferences")
     
-    # Get current consent
-    current_consent = st.session_state.get('consent', {})
-    
-    # Defaults (if no cookie found, assume False for optional)
-    def_analytics = current_consent.get("analytics", False) if current_consent else False
-    def_marketing = current_consent.get("marketing", False) if current_consent else False
+    # Consent is now a simple string: "accepted" or "declined"
+    current_consent = st.session_state.get('consent')
+    is_accepted = (current_consent == "accepted")
     
     with st.expander("Manage Cookie Consent", expanded=False):
         st.write("Update your cookie preferences here.")
         
-        # Form to update cookies
         with st.form("cookie_update_form"):
-            new_analytics = st.checkbox("Analytics Cookies", value=def_analytics, help="Helps us improve Nync features.")
-            new_marketing = st.checkbox("Marketing & Offers", value=def_marketing, help="Allows us to show you relevant upgrade offers.")
+            st.checkbox("Essential Cookies (Required)", value=True, disabled=True)
+            new_consent = st.checkbox("Analytics & Marketing Offers", value=is_accepted, help="Helps us improve and show you relevant upgrades.")
             
             if st.form_submit_button("Save Preferences"):
-                preference = {
-                    "essential": True,
-                    "analytics": new_analytics,
-                    "marketing": new_marketing,
-                    "timestamp": str(dt.datetime.now())
-                }
-                # Save Cookie (Valid for 365 days)
-                expires = dt.datetime.now() + dt.timedelta(days=365)
-                cookie_manager.set("nync_consent", preference, expires_at=expires)
-                
-                # Update Session State
-                st.session_state.consent = preference
+                val = "accepted" if new_consent else "declined"
+                # We hand this off to app.py to physically save the cookie using our background state machine
+                st.session_state.save_consent_val = val
                 st.success("Preferences Saved!")
-                time.sleep(1)
+                time.sleep(0.5)
                 st.rerun()
 
     st.divider()
@@ -181,4 +161,6 @@ def show(user, supabase, cookie_manager):
             if auth.delete_user_data(user.id):
                 auth.supabase.auth.sign_out()
                 st.session_state.session = None
+                # Set flags for app.py to process background cookie clearing
+                st.session_state.clear_cookies = True
                 st.rerun()

@@ -57,11 +57,11 @@ cookies = cookie_manager.get_all(key="init") or {}
 # STEP 1: INITIAL PRE-LOAD (Wait for browser to send cookies)
 # =====================================================================
 if 'first_run_done' not in st.session_state:
-    st.session_state.first_run_done = True
     st.markdown("<div class='nync-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
-    # st.stop() cleanly halts Python. The frontend renders the loader and fetches cookies.
-    # When the cookies arrive, Streamlit will automatically rerun the app!
-    st.stop()
+    # Sleep gives browser a moment to respond to the cookie manager component
+    time.sleep(0.5) 
+    st.session_state.first_run_done = True
+    st.rerun()
 
 # =====================================================================
 # STEP 2: OAUTH CALLBACKS (Catch Google/Outlook Logins immediately)
