@@ -14,6 +14,7 @@ def cookie_dialog():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Accept All", type="primary", use_container_width=True):
+            # Triggers the loader and cookie save logic in app.py
             st.session_state.action = "set_consent"
             st.rerun()
             
@@ -23,16 +24,17 @@ def cookie_dialog():
             st.rerun()
 
 def show(all_cookies):
-    # 1. TRUTH CHECK: Check Browser Cookies. If exists, we are done forever.
+    # 1. TRUTH CHECK: Check Browser Cookies directly.
+    # If it is there, we never show this popup again.
     if all_cookies.get("nync_consent") == "accepted":
         st.session_state.consent = "accepted"
         return
 
-    # 2. SESSION CHECK: If we just clicked accept this session, hide it.
+    # 2. SESSION CHECK: If we just accepted it on this session
     if st.session_state.get("consent") == "accepted":
         return
 
-    # 3. IF NO CONSENT FOUND -> SHOW DIALOG
+    # 3. IF NO CONSENT FOUND -> SHOW DIALOG (Only trigger once to avoid bugs)
     if not st.session_state.get("cookie_dialog_shown"):
         st.session_state.cookie_dialog_shown = True
         cookie_dialog()

@@ -66,23 +66,27 @@ if 'cm_ready' not in st.session_state: st.session_state.cm_ready = False
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
+if 'ignore_cookies' not in st.session_state: st.session_state.ignore_cookies = False
 
-# THE STATE MACHINE: "idle", "login", "logout", "restoring", "set_consent"
+# THE STATE MACHINE: "idle", "process_oauth", "login_sync", "logout", "restoring", "set_consent"
 if 'action' not in st.session_state: st.session_state.action = "idle"
 if 'consent' not in st.session_state: st.session_state.consent = all_cookies.get("nync_consent")
 
 # =====================================================================
-# PHASE A: RENDER LOADING SCREEN
+# PHASE A: THE LOADER BLOCK (Intercepts app to perform background work)
 # =====================================================================
 is_loading = st.session_state.action != "idle" or not st.session_state.cm_ready
 
 if is_loading:
+    # Determine Message
     msg = "Loading Nync..."
-    if st.session_state.action == "login": msg = "Securing session..."
-    elif st.session_state.action == "logout": msg = "Logging out..."
+    if st.session_state.action == "login_sync": msg = "Securing session..."
+    elif st.session_state.action == "process_oauth": msg = "Authenticating with Google..."
+    elif st.session_state.action == "logout": msg = "Logging out safely..."
     elif st.session_state.action == "restoring": msg = "Welcome back..."
     elif st.session_state.action == "set_consent": msg = "Saving preferences..."
     
+    # Render the overlay immediately
     st.markdown(f"""
         <div class="nync-fullscreen-overlay">
             <div class="nync-spinner"></div>
@@ -90,74 +94,24 @@ if is_loading:
         </div>
     """, unsafe_allow_html=True)
 
-# =====================================================================
-# PHASE B: PROCESS STATE LOGIC (Happens behind the loading screen)
-# =====================================================================
-if not st.session_state.cm_ready:
-    time.sleep(0.5) # Wait for browser to pass cookies
-    st.session_state.cm_ready = True
-    st.rerun()
+    # EXECUTE STATE LOGIC (Behind the black screen)
+    if not st.session_state.cm_ready:
+        time.sleep(0.5) # Time for browser to send initial cookies
+        st.session_state.cm_ready = True
+        st.rerun()
 
-if st.session_state.action == "logout":
-    time.sleep(1.2) # Allow visual loader, cookies deleted on button press
-    st.session_state.action = "idle"
-    st.rerun()
-
-elif st.session_state.action == "login":
-    remember = st.session_state.get("remember_me", True)
-    expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
-    cookie_manager.set("sb_access_token", st.session_state.session.access_token, expires_at=expires, key="set_acc")
-    cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key="set_ref")
-    time.sleep(1.2)
-    st.session_state.action = "idle"
-    st.rerun()
-
-elif st.session_state.action == "restoring":
-    acc = all_cookies.get("sb_access_token")
-    ref = all_cookies.get("sb_refresh_token")
-    session = auth.restore_session(acc, ref)
-    if session:
-        st.session_state.session = session
-        st.session_state.user = session.user
-        st.session_state.action = "idle"
-    else:
-        # Invalid cookies, wipe them
-        cookie_manager.delete("sb_access_token", key="clean_acc")
-        cookie_manager.delete("sb_refresh_token", key="clean_ref")
-        st.session_state.action = "logout" 
-    st.rerun()
-
-elif st.session_state.action == "set_consent":
-    st.session_state.consent = "accepted"
-    expires = dt.datetime.now() + dt.timedelta(days=365)
-    cookie_manager.set("nync_consent", "accepted", expires_at=expires, key="save_consent")
-    time.sleep(1.2)
-    st.session_state.action = "idle"
-    st.rerun()
-
-# =====================================================================
-# PHASE C: IDLE WATCHERS (Trigger states from idle)
-# =====================================================================
-if st.session_state.action == "idle":
-    
-    # 1. Check for valid cookies on fresh load
-    if not st.session_state.session:
-        if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
-            st.session_state.action = "restoring"
-            st.rerun()
-
-    # 2. Catch OAuth Logins (Google / Outlook)
-    if "code" in st.query_params:
-        code = st.query_params["code"]
-        state = st.query_params.get("state", "")
-        if state.startswith("microsoft_connect"):
+    elif st.session_state.action == "process_oauth":
+        code = st.query_params.get("code")
+        state_param = st.query_params.get("state", "")
+        if state_param.startswith("microsoft_connect"):
             try:
-                parts = state.split(":")
+                parts = state_param.split(":")
                 if len(parts) > 1 and auth.handle_microsoft_callback(code, parts[1]):
                     st.toast("✅ Outlook Connected!")
                     st.session_state.nav = "Settings"
             except: pass
             st.query_params.clear()
+            st.session_state.action = "idle"
             st.rerun()
         else:
             try:
@@ -167,27 +121,85 @@ if st.session_state.action == "idle":
                     st.session_state.user = res.user
                     auth.save_google_token(res.user.id, res.session)
                     st.query_params.clear()
-                    st.session_state.action = "login" # Trigger login sync state
+                    st.session_state.action = "login_sync" # Route directly to cookie saver
                     st.rerun()
-            except: 
+                else:
+                    st.query_params.clear()
+                    st.session_state.action = "idle"
+                    st.rerun()
+            except Exception as e:
                 st.query_params.clear()
+                st.session_state.action = "idle"
                 st.rerun()
 
-    # 3. Handle Supabase Token Rotation (If tokens change mid-session)
-    if st.session_state.session:
-        mem_acc = st.session_state.session.access_token
-        cook_acc = all_cookies.get("sb_access_token")
-        if cook_acc and mem_acc != cook_acc:
-            st.session_state.action = "login" # Trigger save of new token
-            st.rerun()
+    elif st.session_state.action == "login_sync":
+        remember = st.session_state.get("remember_me", True)
+        expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
+        # Unique keys force the component to physically execute the write action
+        cookie_manager.set("sb_access_token", st.session_state.session.access_token, expires_at=expires, key=f"set_acc_{time.time()}")
+        cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key=f"set_ref_{time.time()}")
+        st.session_state.ignore_cookies = False
+        time.sleep(1.5) # Give the browser time to write before releasing to UI
+        st.session_state.action = "idle"
+        st.rerun()
 
-# --- HALT EXECUTION IF LOADING (Crucial for anti-jitter) ---
-if is_loading:
+    elif st.session_state.action == "restoring":
+        acc = all_cookies.get("sb_access_token")
+        ref = all_cookies.get("sb_refresh_token")
+        session = auth.restore_session(acc, ref)
+        if session:
+            st.session_state.session = session
+            st.session_state.user = session.user
+            st.session_state.action = "idle"
+        else:
+            st.session_state.action = "logout" # Tokens expired/invalid
+        st.rerun()
+
+    elif st.session_state.action == "logout":
+        cookie_manager.delete("sb_access_token", key=f"del_acc_{time.time()}")
+        cookie_manager.delete("sb_refresh_token", key=f"del_ref_{time.time()}")
+        st.session_state.ignore_cookies = True # Ignore stale cache on next loop
+        time.sleep(1.5)
+        st.session_state.action = "idle"
+        st.rerun()
+
+    elif st.session_state.action == "set_consent":
+        st.session_state.consent = "accepted"
+        expires = dt.datetime.now() + dt.timedelta(days=365)
+        cookie_manager.set("nync_consent", "accepted", expires_at=expires, key=f"set_cons_{time.time()}")
+        time.sleep(1.5)
+        st.session_state.action = "idle"
+        st.rerun()
+
+    # CRITICAL: Stop execution so the rest of the app doesn't render under the loader
     st.stop()
 
 
 # =====================================================================
-# PHASE D: MAIN APP RENDER (Only executes if Idle)
+# PHASE B: IDLE WATCHERS (Trigger transitions from idle seamlessly)
+# =====================================================================
+# 1. Catch Google / Outlook Redirects INSTANTLY
+if "code" in st.query_params:
+    st.session_state.action = "process_oauth"
+    st.rerun()
+
+# 2. Check for Cookies to Restore Session
+if not st.session_state.session and not st.session_state.ignore_cookies:
+    if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
+        st.session_state.action = "restoring"
+        st.rerun()
+
+# 3. Watch for Token Rotations (Supabase gave us a new token mid-session)
+if st.session_state.session:
+    mem_acc = st.session_state.session.access_token
+    cook_acc = all_cookies.get("sb_access_token")
+    if cook_acc and mem_acc != cook_acc:
+        st.session_state.action = "login_sync"
+        st.rerun()
+
+
+# =====================================================================
+# PHASE C: MAIN APP RENDER (Runs only when Idle & Ready)
 # =====================================================================
 
 # STRIPE CALLBACK
@@ -218,9 +230,9 @@ cookie_consent.show(all_cookies)
 # ROUTER
 if not st.session_state.session:
     login.show()
-    # Trigger login state if manual form submitted successfully
+    # Trigger login sync loader if manual form was submitted successfully
     if st.session_state.session:
-        st.session_state.action = "login"
+        st.session_state.action = "login_sync"
         st.rerun() 
         
 else:
@@ -273,13 +285,10 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
-            # IMMEDIATELY clear local state and tell browser to delete cookies
             auth.supabase.auth.sign_out()
             st.session_state.session = None
             st.session_state.user = None
-            cookie_manager.delete("sb_access_token", key="del_acc")
-            cookie_manager.delete("sb_refresh_token", key="del_ref")
-            # Trigger Logout UI state
+            # Push logic straight to the logout spinner block
             st.session_state.action = "logout"
             st.rerun()
     
