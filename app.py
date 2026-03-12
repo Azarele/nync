@@ -32,17 +32,23 @@ st.markdown("""
     button[key="top_logout"] { color: #ff4b4b !important; border-color: #ff4b4b !important; }
     button[key="top_logout"]:hover { background-color: #ff4b4b !important; color: white !important; }
     
-    /* NEW: Clean CSS Spinner */
-    .nync-loader-container {
+    /* FULL-SCREEN OVERLAY FOR SMOOTH TRANSITIONS */
+    .nync-fullscreen-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #000000;
+        z-index: 9999999;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 60vh;
     }
     .nync-spinner {
-        width: 50px;
-        height: 50px;
+        width: 60px;
+        height: 60px;
         border: 4px solid rgba(255, 255, 255, 0.1);
         border-left-color: #ffffff;
         border-radius: 50%;
@@ -53,10 +59,11 @@ st.markdown("""
         0% { transform: rotate(0deg); } 
         100% { transform: rotate(360deg); } 
     }
-    .nync-loader-container h3 {
+    .nync-fullscreen-overlay h3 {
         color: #888;
         font-weight: 400;
         margin: 0;
+        font-family: sans-serif;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -66,38 +73,25 @@ cookie_manager = stx.CookieManager(key="cm")
 all_cookies = cookie_manager.get_all(key="init_get")
 
 # 3. STATE INIT
-if 'cm_ready' not in st.session_state: st.session_state.cm_ready = False
+if 'app_init' not in st.session_state: st.session_state.app_init = False
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 if 'consent' not in st.session_state: st.session_state.consent = None 
-if 'consent_pending_save' not in st.session_state: st.session_state.consent_pending_save = False
 
 # Navigation/Auth Flags for the Loading Screen
 if 'logout_pending' not in st.session_state: st.session_state.logout_pending = False
 if 'login_pending' not in st.session_state: st.session_state.login_pending = False
 if 'cookie_restore_pending' not in st.session_state: st.session_state.cookie_restore_pending = False
 
-# --- CRITICAL FIX 1: THE "PRE-LOAD" WAIT ---
-# The browser needs a split second to send cookies to Python.
-# By forcing a rerun on the very first load, we guarantee cookies are available.
-if not st.session_state.cm_ready:
-    time.sleep(0.5)
-    st.session_state.cm_ready = True
-    st.rerun()
-
-# --- CRITICAL FIX 2: TRIGGER SESSION RESTORE BEFORE APP LOADS ---
-if not st.session_state.session and not st.session_state.logout_pending and not st.session_state.cookie_restore_pending and not "code" in st.query_params:
-    if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
-        st.session_state.cookie_restore_pending = True
-        st.rerun() # Rerun immediately to show the loading screen
-
 # 4. DETERMINE LOADING STATE
-# If any of these are true, we show the loading screen and hide the app
 is_loading = False
 load_msg = ""
 
-if st.session_state.logout_pending:
+# Determine if we should cover the screen with the spinner
+if not st.session_state.app_init:
+    is_loading, load_msg = True, "Loading Nync..."
+elif st.session_state.logout_pending:
     is_loading, load_msg = True, "Logging out..."
 elif "code" in st.query_params:
     is_loading, load_msg = True, "Authenticating..."
@@ -106,21 +100,26 @@ elif st.session_state.login_pending:
 elif st.session_state.cookie_restore_pending:
     is_loading, load_msg = True, "Restoring session..."
 
-# Render Loading Screen if triggered
+# Render Loading Screen
 if is_loading:
     st.markdown(f"""
-        <div class="nync-loader-container">
+        <div class="nync-fullscreen-overlay">
             <div class="nync-spinner"></div>
             <h3>{load_msg}</h3>
         </div>
     """, unsafe_allow_html=True)
 
-# 5. EXECUTE PENDING TASKS IN BACKGROUND
+# 5. PROCESS BACKGROUND ACTIONS (These run while the screen is black)
+if not st.session_state.app_init:
+    time.sleep(0.5) # Critical: Gives the browser time to pass cookies to Python
+    st.session_state.app_init = True
+    st.rerun()
+
 if st.session_state.logout_pending:
     if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token", key="del_acc")
     if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token", key="del_ref")
     st.session_state.logout_pending = False
-    time.sleep(1) # Let the user see the clean logout loader
+    time.sleep(0.8) # Keep the spinner on screen slightly longer for smoothness
     st.rerun()
 
 if st.session_state.cookie_restore_pending:
@@ -129,15 +128,15 @@ if st.session_state.cookie_restore_pending:
         st.session_state.session = session
         st.session_state.user = session.user
     else:
-        st.session_state.logout_pending = True
+        st.session_state.logout_pending = True # Token invalid, force clean logout
     st.session_state.cookie_restore_pending = False
     st.rerun()
 
-if st.session_state.consent_pending_save:
-    expires = dt.datetime.now() + dt.timedelta(days=365)
-    # Save simple string to guarantee it writes successfully
-    cookie_manager.set("nync_consent", "accepted", expires_at=expires, key="set_consent")
-    st.session_state.consent_pending_save = False
+# Trigger Cookie Restore if we aren't already loading
+if not is_loading and not st.session_state.session:
+    if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
+        st.session_state.cookie_restore_pending = True
+        st.rerun()
 
 # 6. OAUTH CALLBACKS (Google / Microsoft)
 if "code" in st.query_params:
@@ -165,15 +164,15 @@ if "code" in st.query_params:
                 auth.save_google_token(res.user.id, res.session)
         except: pass
         st.query_params.clear()
-        # Trigger the clean sync loader
         st.session_state.login_pending = True
         st.rerun() 
 
-# 7. AUTO-SYNC AUTH COOKIES
+# 7. AUTO-SYNC AUTH COOKIES (Handles Token Rotation)
 if st.session_state.session and not st.session_state.logout_pending:
     mem_acc = st.session_state.session.access_token
     cook_acc = all_cookies.get("sb_access_token")
     
+    # Only write to cookie if the token has actually changed
     if mem_acc != cook_acc:
         remember = st.session_state.get("remember_me", True)
         expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
@@ -182,7 +181,7 @@ if st.session_state.session and not st.session_state.logout_pending:
         
     if st.session_state.login_pending:
         st.session_state.login_pending = False
-        time.sleep(1)
+        time.sleep(0.8) # Keeps the loading screen up while saving cookies
         st.rerun()
 
 # =========================================================
@@ -212,7 +211,7 @@ if not is_loading:
         st.rerun()
 
     # SHOW CONSENT DIALOG
-    cookie_consent.show(all_cookies)
+    cookie_consent.show(cookie_manager, all_cookies)
 
     # 10. ROUTER
     if not st.session_state.session:
@@ -272,6 +271,7 @@ if not is_loading:
 
         with c_user:
             if st.button("Log Out", key="top_logout", use_container_width=True):
+                # Trigger the logout loader animation
                 st.session_state.logout_pending = True
                 auth.supabase.auth.sign_out()
                 st.session_state.session = None
