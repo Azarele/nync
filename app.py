@@ -68,7 +68,7 @@ if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 if 'ignore_cookies' not in st.session_state: st.session_state.ignore_cookies = False
 
-# THE STATE MACHINE: "idle", "process_oauth", "login_sync", "logout", "restoring", "set_consent"
+# THE STATE MACHINE: "idle", "process_oauth", "login_sync", "logout", "restoring", "set_consent_accept", "set_consent_decline"
 if 'action' not in st.session_state: st.session_state.action = "idle"
 if 'consent' not in st.session_state: st.session_state.consent = all_cookies.get("nync_consent")
 
@@ -84,7 +84,7 @@ if is_loading:
     elif st.session_state.action == "process_oauth": msg = "Authenticating with Google..."
     elif st.session_state.action == "logout": msg = "Logging out safely..."
     elif st.session_state.action == "restoring": msg = "Welcome back..."
-    elif st.session_state.action == "set_consent": msg = "Saving preferences..."
+    elif st.session_state.action.startswith("set_consent"): msg = "Saving preferences..."
     
     # Render the overlay immediately
     st.markdown(f"""
@@ -121,13 +121,16 @@ if is_loading:
                     st.session_state.user = res.user
                     auth.save_google_token(res.user.id, res.session)
                     st.query_params.clear()
+                    st.session_state.ignore_cookies = False
                     st.session_state.action = "login_sync" # Route directly to cookie saver
                     st.rerun()
                 else:
-                    st.query_params.clear()
-                    st.session_state.action = "idle"
-                    st.rerun()
+                    raise Exception("No session returned.")
             except Exception as e:
+                # Log precise error & reset safely
+                st.error(f"Google Login Failed: Please try again.")
+                print(f"OAuth Error: {e}")
+                time.sleep(2)
                 st.query_params.clear()
                 st.session_state.action = "idle"
                 st.rerun()
@@ -135,11 +138,14 @@ if is_loading:
     elif st.session_state.action == "login_sync":
         remember = st.session_state.get("remember_me", True)
         expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
-        # Unique keys force the component to physically execute the write action
-        cookie_manager.set("sb_access_token", st.session_state.session.access_token, expires_at=expires, key=f"set_acc_{time.time()}")
-        cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key=f"set_ref_{time.time()}")
+        
+        try:
+            cookie_manager.set("sb_access_token", st.session_state.session.access_token, expires_at=expires, key=f"set_acc_{time.time()}")
+            cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key=f"set_ref_{time.time()}")
+        except: pass
+        
         st.session_state.ignore_cookies = False
-        time.sleep(1.5) # Give the browser time to write before releasing to UI
+        time.sleep(1.0) # Give the browser time to write before releasing to UI
         st.session_state.action = "idle"
         st.rerun()
 
@@ -156,18 +162,30 @@ if is_loading:
         st.rerun()
 
     elif st.session_state.action == "logout":
-        cookie_manager.delete("sb_access_token", key=f"del_acc_{time.time()}")
-        cookie_manager.delete("sb_refresh_token", key=f"del_ref_{time.time()}")
+        # CRITICAL FIX: Safe deletion blocks KeyError if cookie is already gone
+        try:
+            cookie_manager.delete("sb_access_token", key=f"del_acc_{time.time()}")
+        except KeyError: pass
+        
+        try:
+            cookie_manager.delete("sb_refresh_token", key=f"del_ref_{time.time()}")
+        except KeyError: pass
+        
         st.session_state.ignore_cookies = True # Ignore stale cache on next loop
-        time.sleep(1.5)
+        time.sleep(1.0)
         st.session_state.action = "idle"
         st.rerun()
 
-    elif st.session_state.action == "set_consent":
-        st.session_state.consent = "accepted"
+    elif st.session_state.action.startswith("set_consent"):
+        val = "accepted" if "accept" in st.session_state.action else "declined"
+        st.session_state.consent = val
         expires = dt.datetime.now() + dt.timedelta(days=365)
-        cookie_manager.set("nync_consent", "accepted", expires_at=expires, key=f"set_cons_{time.time()}")
-        time.sleep(1.5)
+        
+        try:
+            cookie_manager.set("nync_consent", val, expires_at=expires, key=f"set_cons_{time.time()}")
+        except: pass
+        
+        time.sleep(1.0)
         st.session_state.action = "idle"
         st.rerun()
 
@@ -232,6 +250,7 @@ if not st.session_state.session:
     login.show()
     # Trigger login sync loader if manual form was submitted successfully
     if st.session_state.session:
+        st.session_state.ignore_cookies = False
         st.session_state.action = "login_sync"
         st.rerun() 
         
