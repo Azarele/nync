@@ -14,12 +14,12 @@ def cookie_dialog():
     c1, c2 = st.columns(2)
     with c1:
         if st.button("Accept All", type="primary", use_container_width=True):
-            st.session_state.action = "set_consent_accept"
+            st.session_state.save_consent_val = "accepted"
             st.rerun()
             
     with c2:
         if st.button("Decline Optional", use_container_width=True):
-            st.session_state.action = "set_consent_decline"
+            st.session_state.save_consent_val = "declined"
             st.rerun()
 
 def show(all_cookies):
@@ -33,7 +33,7 @@ def show(all_cookies):
     if st.session_state.get("consent") in ["accepted", "declined"]:
         return
 
-    # 3. IF NO CONSENT FOUND -> SHOW DIALOG (Only trigger once)
+    # 3. SHOW DIALOG
     if not st.session_state.get("cookie_dialog_shown"):
         st.session_state.cookie_dialog_shown = True
         cookie_dialog()
