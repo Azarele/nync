@@ -35,44 +35,88 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. INIT COOKIE MANAGER
-cookie_manager = stx.CookieManager(key="cookie_manager")
-
-# 3. FETCH COOKIES ONCE
+cookie_manager = stx.CookieManager(key="cm")
 time.sleep(0.1) 
 all_cookies = cookie_manager.get_all(key="init_get")
 
-# 4. SESSION INIT
+# 3. STATE INIT
 if 'session' not in st.session_state: st.session_state.session = None
 if 'user' not in st.session_state: st.session_state.user = None
 if 'nav' not in st.session_state: st.session_state.nav = "Dashboard"
 if 'consent' not in st.session_state: st.session_state.consent = None 
+if 'consent_pending_save' not in st.session_state: st.session_state.consent_pending_save = False
+if 'logout_pending' not in st.session_state: st.session_state.logout_pending = False
 
-# --- SHOW COOKIE CONSENT POPUP ---
-cookie_consent.show(cookie_manager, all_cookies)
+# 4. PENDING DELETES & SAVES 
+# By placing these at the top, we guarantee Streamlit renders the component to the DOM.
+if st.session_state.logout_pending:
+    if "sb_access_token" in all_cookies: cookie_manager.delete("sb_access_token", key="del_acc")
+    if "sb_refresh_token" in all_cookies: cookie_manager.delete("sb_refresh_token", key="del_ref")
+    st.session_state.logout_pending = False
 
-# --- CHECK COOKIES FOR EXISTING SESSION ---
-if not st.session_state.session:
+if st.session_state.consent_pending_save:
+    expires = dt.datetime.now() + dt.timedelta(days=365)
+    cookie_manager.set("nync_consent", st.session_state.consent, expires_at=expires, key="set_consent")
+    st.session_state.consent_pending_save = False
+    st.toast("✅ Privacy Preferences Saved!")
+
+# 5. SHOW CONSENT DIALOG
+cookie_consent.show(all_cookies)
+
+# 6. RESTORE AUTH FROM COOKIES
+if not st.session_state.session and not st.session_state.logout_pending:
     if "sb_access_token" in all_cookies and "sb_refresh_token" in all_cookies:
-        try:
-            session = auth.restore_session(all_cookies["sb_access_token"], all_cookies["sb_refresh_token"])
-            if session:
-                st.session_state.session = session
-                st.session_state.user = session.user
-                
-                # --- CRITICAL FIX: TOKEN ROTATION ---
-                # If Supabase rotated the token, we save the new one.
-                # WE DO NOT RERUN. We let the app fall through to the dashboard.
-                # This ensures the browser has infinite time to save the cookie.
-                if session.refresh_token != all_cookies.get("sb_refresh_token"):
-                    expires = dt.datetime.now() + dt.timedelta(days=30)
-                    cookie_manager.set("sb_access_token", session.access_token, expires_at=expires, key="renew_acc")
-                    cookie_manager.set("sb_refresh_token", session.refresh_token, expires_at=expires, key="renew_ref")
-        except:
-            # Clean up invalid cookies
-            cookie_manager.delete("sb_access_token", key="clean_1")
-            cookie_manager.delete("sb_refresh_token", key="clean_2")
+        session = auth.restore_session(all_cookies["sb_access_token"], all_cookies["sb_refresh_token"])
+        if session:
+            st.session_state.session = session
+            st.session_state.user = session.user
+        else:
+            # Token is invalid or expired
+            st.session_state.logout_pending = True
+            st.rerun()
 
-# 5. GLOBAL QUERY PARAMS
+# 7. OAUTH CALLBACKS (Google / Microsoft)
+if "code" in st.query_params:
+    code = st.query_params["code"]
+    state = st.query_params.get("state", "")
+    
+    if state.startswith("microsoft_connect"):
+        try:
+            parts = state.split(":")
+            if len(parts) > 1:
+                user_id_from_state = parts[1]
+                if auth.handle_microsoft_callback(code, user_id_from_state):
+                    st.toast("✅ Outlook Connected!")
+                    st.session_state.nav = "Settings"
+        except: pass
+        st.query_params.clear()
+        st.rerun()
+        
+    else: 
+        try:
+            res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
+            if res.session:
+                st.session_state.session = res.session
+                st.session_state.user = res.user
+                auth.save_google_token(res.user.id, res.session)
+                st.toast("✅ Logged in with Google!")
+        except: pass
+        st.query_params.clear()
+        st.rerun() # Clears URL. Next run hits Auto-Sync block below to save cookies.
+
+# 8. AUTO-SYNC AUTH COOKIES (The Magic Bullet)
+# Detects manual logins, Google logins, and Supabase token rotations flawlessly.
+if st.session_state.session:
+    mem_acc = st.session_state.session.access_token
+    cook_acc = all_cookies.get("sb_access_token")
+    
+    if mem_acc != cook_acc:
+        remember = st.session_state.get("remember_me", True)
+        expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
+        cookie_manager.set("sb_access_token", mem_acc, expires_at=expires, key="sync_acc")
+        cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key="sync_ref")
+
+# 9. GLOBAL QUERY PARAMS & STRIPE
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
@@ -80,7 +124,6 @@ if "vote" in st.query_params and not st.session_state.session:
 if "invite" in st.query_params: 
     st.session_state.pending_invite = st.query_params["invite"]
 
-# --- STRIPE CALLBACK ---
 if "stripe_session_id" in st.query_params and st.session_state.user:
     price_id = auth.verify_stripe_payment(st.query_params["stripe_session_id"])
     if price_id:
@@ -94,75 +137,12 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
     st.query_params.clear()
     st.rerun()
 
-# --- AUTH CALLBACKS (Google / Microsoft) ---
-if "code" in st.query_params:
-    code = st.query_params["code"]
-    state = st.query_params.get("state", "")
-    
-    # CASE A: Microsoft Outlook Connection
-    if state.startswith("microsoft_connect"):
-        try:
-            parts = state.split(":")
-            if len(parts) > 1:
-                user_id_from_state = parts[1]
-                if auth.handle_microsoft_callback(code, user_id_from_state):
-                    st.toast("✅ Outlook Connected! Please log in again to see changes.")
-                    st.session_state.nav = "Settings"
-                else:
-                    st.error("❌ Connection failed.")
-        except Exception as e:
-            st.error(f"Link Error: {e}")
-        st.query_params.clear()
-        st.rerun()
-        
-    # CASE B: Standard Login (Google / Supabase)
-    else: 
-        try:
-            res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
-            if res.session:
-                st.session_state.session = res.session
-                st.session_state.user = res.user
-                
-                # --- SAVE GOOGLE TOKENS (CALENDAR) ---
-                auth.save_google_token(res.user.id, res.session)
-
-                # --- SAVE APP SESSION COOKIES (PERSISTENCE) ---
-                expires = dt.datetime.now() + dt.timedelta(days=30)
-                cookie_manager.set("sb_access_token", res.session.access_token, expires_at=expires, key="auth_set_1")
-                cookie_manager.set("sb_refresh_token", res.session.refresh_token, expires_at=expires, key="auth_set_2")
-                
-                st.success("✅ Logged in!")
-                # Wait 3 seconds to guarantee cookie write before URL clear
-                time.sleep(3)
-                
-                st.query_params.clear()
-                st.rerun()
-        except: 
-            st.query_params.clear()
-
-# 6. ROUTER
-# B: LOGIN PAGE
+# 10. ROUTER
 if not st.session_state.session:
     login.show()
-    
-    # CHECK IF MANUAL LOGIN HAPPENED
+    # If the user logged in manually, rerun to hit the Auto-Sync block
     if st.session_state.session:
-        # Check the 'Remember Me' state (default to True if not set)
-        remember = st.session_state.get("remember_me", True)
-        
-        # Calculate expiry: 30 days if remembered, None (Session) if not
-        expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
-        
-        s = st.session_state.session
-        cookie_manager.set("sb_access_token", s.access_token, expires_at=expires, key="manual_set_1")
-        cookie_manager.set("sb_refresh_token", s.refresh_token, expires_at=expires, key="manual_set_2")
-        
-        # Don't rerun immediately, let the dashboard render
-        st.toast("Welcome back!")
-        time.sleep(1)
-        st.rerun()
-
-# C: DASHBOARD
+        st.rerun() 
 else:
     # --- HANDLE PENDING INVITES ---
     if 'pending_invite' in st.session_state:
@@ -213,11 +193,10 @@ else:
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
-            cookie_manager.delete("sb_access_token", key="logout_1")
-            cookie_manager.delete("sb_refresh_token", key="logout_2")
             auth.supabase.auth.sign_out()
             st.session_state.session = None
             st.session_state.user = None
+            st.session_state.logout_pending = True
             st.rerun()
     
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
@@ -262,7 +241,6 @@ else:
                 with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
 
-    # PASS COOKIE MANAGER TO SETTINGS
     elif nav == "Settings": settings.show(st.session_state.user, auth.supabase, cookie_manager)
     elif nav == "Pricing": pricing.show()
     elif nav == "Guide": guide.show()
