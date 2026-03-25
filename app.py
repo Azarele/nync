@@ -4,7 +4,8 @@ import base64
 import html
 import auth_utils as auth
 import extra_streamlit_components as stx
-from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent, onboarding
+# ADDED TEAM TO IMPORTS
+from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent, onboarding, team
 import datetime as dt
 
 # 1. SETUP
@@ -31,7 +32,6 @@ st.markdown("""
     button[key="top_logout"] { color: #ff4b4b !important; border-color: #ff4b4b !important; }
     button[key="top_logout"]:hover { background-color: #ff4b4b !important; color: white !important; }
     
-    /* CSS-ONLY STARTUP LOADER */
     .startup-loader {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0;
         background-color: #000000; z-index: 9999998;
@@ -41,7 +41,6 @@ st.markdown("""
     }
     @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
     
-    /* PYTHON CONTROLLED OVERLAY */
     .nync-fullscreen-overlay {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0;
         background-color: #000000; z-index: 9999999;
@@ -77,9 +76,6 @@ if st.session_state.ignore_cookies is None:
 cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
-# =====================================================================
-# NEW: CATCH URL PARAMS IMMEDIATELY BEFORE OAUTH CLEARS THEM
-# =====================================================================
 if "invite" in st.query_params: 
     st.session_state.pending_invite = st.query_params["invite"]
 
@@ -87,9 +83,6 @@ if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
 
-# =====================================================================
-# STEP 1: OAUTH CALLBACKS
-# =====================================================================
 if "code" in st.query_params:
     code = st.query_params["code"]
     state_param = st.query_params.get("state", "")
@@ -117,9 +110,6 @@ if "code" in st.query_params:
         st.query_params.clear()
         st.rerun()
 
-# =====================================================================
-# STEP 2: CHECK FOR EXISTING SESSION COOKIES TO RESTORE
-# =====================================================================
 if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.pending_restore and not st.session_state.ignore_cookies:
     acc = cookies.get("sb_access_token")
     ref = cookies.get("sb_refresh_token")
@@ -127,9 +117,6 @@ if not st.session_state.session and not st.session_state.clear_cookies and not s
         st.session_state.pending_restore = True
         st.rerun()
 
-# =====================================================================
-# STEP 3: TOKEN ROTATION CHECK
-# =====================================================================
 if st.session_state.session and not st.session_state.clear_cookies and not st.session_state.sync_cookies:
     mem_acc = st.session_state.session.access_token
     cook_acc = cookies.get("sb_access_token")
@@ -137,20 +124,13 @@ if st.session_state.session and not st.session_state.clear_cookies and not st.se
         st.session_state.sync_cookies = True
         st.rerun()
 
-# =====================================================================
-# STEP 4: LOADER STATE MACHINE (Executes background actions safely)
-# =====================================================================
 is_loading = False
 load_msg = ""
 
-if st.session_state.pending_restore:
-    is_loading, load_msg = True, "Restoring session..."
-elif st.session_state.clear_cookies:
-    is_loading, load_msg = True, "Logging out safely..."
-elif st.session_state.sync_cookies:
-    is_loading, load_msg = True, "Securing session..."
-elif st.session_state.save_consent_val:
-    is_loading, load_msg = True, "Saving preferences..."
+if st.session_state.pending_restore: is_loading, load_msg = True, "Restoring session..."
+elif st.session_state.clear_cookies: is_loading, load_msg = True, "Logging out safely..."
+elif st.session_state.sync_cookies: is_loading, load_msg = True, "Securing session..."
+elif st.session_state.save_consent_val: is_loading, load_msg = True, "Saving preferences..."
 
 if is_loading:
     st.markdown(f"<div class='nync-fullscreen-overlay'><div class='nync-spinner'></div><h3>{load_msg}</h3></div>", unsafe_allow_html=True)
@@ -159,18 +139,14 @@ if is_loading:
         st.session_state.pending_restore = False
         acc = cookies.get("sb_access_token")
         ref = cookies.get("sb_refresh_token")
-        
         if acc and ref:
             session = auth.restore_session(acc, ref)
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
                 st.session_state.sync_cookies = True 
-            else:
-                st.session_state.clear_cookies = True 
-        else:
-            st.session_state.clear_cookies = True
-            
+            else: st.session_state.clear_cookies = True 
+        else: st.session_state.clear_cookies = True
         time.sleep(0.5)
         st.rerun()
         
@@ -193,7 +169,6 @@ if is_loading:
             mem_ref = st.session_state.session.refresh_token
             remember = st.session_state.get("remember_me", True)
             expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
-            
             t_key = str(time.time()).replace(".", "")
             cookie_manager.set("sb_access_token", mem_acc, expires_at=expires, key=f"set_acc_{t_key}")
             cookie_manager.set("sb_refresh_token", mem_ref, expires_at=expires, key=f"set_ref_{t_key}")
@@ -238,7 +213,6 @@ if not st.session_state.session:
         st.session_state.ignore_cookies = False 
         st.rerun()
 else:
-    # Handle the stored invite code from the URL
     if 'pending_invite' in st.session_state:
         code = st.session_state.pending_invite
         if auth.join_team_by_code(st.session_state.user.id, code):
@@ -262,7 +236,8 @@ else:
     if tier == "FREE" and user_consent == "accepted":
         st.info("💡 **Tip:** Upgrade to **Squad Tier** to remove ads and unlock unlimited teams. [View Pricing](#)", icon="🚀")
 
-    c_logo, c_dash, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 2, 1.2], gap="small")
+    # ADDED 'c_team' TO TOP NAVIGATION
+    c_logo, c_dash, c_team, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 1, 1.5, 1.2], gap="small")
     
     with c_logo:
         try:
@@ -274,6 +249,8 @@ else:
 
     with c_dash:
         if st.button("Dashboard", use_container_width=True): st.session_state.nav = "Dashboard"
+    with c_team:
+        if st.button("Team", use_container_width=True): st.session_state.nav = "Team"
     with c_set:
         if st.button("Settings", use_container_width=True): st.session_state.nav = "Settings"
     with c_price:
@@ -332,10 +309,11 @@ else:
                 if st.button("Upgrade"): st.session_state.nav = "Pricing"; st.rerun()
             else:
                 roster = auth.get_team_roster(st.session_state.active_team_id)
-                t1, t2 = st.tabs(["Pain Board", "Scheduler"])
+                t1, t2 = st.tabs(["Pain Board", "Scheduler (Heatmap)"])
                 with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
-
+                
+    elif nav == "Team": team.show(st.session_state.user, auth.supabase)
     elif nav == "Settings": settings.show(st.session_state.user, auth.supabase, cookie_manager)
     elif nav == "Pricing": pricing.show()
     elif nav == "Guide": guide.show()
