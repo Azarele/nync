@@ -3,13 +3,11 @@ import datetime as dt
 import pytz
 import pandas as pd
 import altair as alt
-import auth_utils as auth
 
 def calculate_local_pain(hour, user_tz_str):
     """Calculates how painful a specific UTC hour is for a local timezone."""
     try:
         user_tz = pytz.timezone(user_tz_str)
-        # Create a dummy date to check the hour in their local time
         utc_time = dt.datetime.now(pytz.UTC).replace(hour=hour, minute=0, second=0)
         local_time = utc_time.astimezone(user_tz)
         local_hour = local_time.hour
@@ -25,68 +23,114 @@ def calculate_local_pain(hour, user_tz_str):
 
 def show(supabase, user, roster):
     st.markdown("### 🗺️ Team Availability Heatmap")
-    st.caption("A visual grid of when your team is awake and working. Green is good, Red is pain.")
+    st.caption("A visual grid of when your team is awake and working. **Click any column to propose a meeting time!**")
     
     if not roster:
         st.info("Head over to the Team tab to add members first.")
         return
 
-    # User selects a date (defaults to tomorrow)
+    # Automatically loads the chart based on the date selected
     target_date = st.date_input("Select Target Date", dt.date.today() + dt.timedelta(days=1))
     
-    if st.button("Generate Heatmap", type="primary"):
-        with st.spinner("Analyzing Global Timezones..."):
+    with st.spinner("Analyzing Global Timezones..."):
+        
+        # 1. Build the Data Matrix
+        data = []
+        utc_hours = list(range(24))
+        
+        for h in utc_hours:
+            display_time = f"{h:02d}:00 UTC"
             
-            # 1. Build the Data Matrix
-            data = []
-            utc_hours = list(range(24))
-            
-            for h in utc_hours:
-                # Format UTC hour for display (e.g., "09:00 UTC")
-                display_time = f"{h:02d}:00 UTC"
+            for member in roster:
+                name = member.get('name', 'Unknown')
+                tz = member.get('tz', 'UTC')
+                pain = calculate_local_pain(h, tz)
                 
-                for member in roster:
-                    name = member.get('name', 'Unknown')
-                    tz = member.get('tz', 'UTC')
-                    
-                    # Calculate Pain
-                    pain = calculate_local_pain(h, tz)
-                    
-                    data.append({
-                        "Time": display_time,
-                        "Member": name,
-                        "Pain Score": pain,
-                        "Local Timezone": tz
-                    })
-                    
-            df = pd.DataFrame(data)
+                data.append({
+                    "Time": display_time,
+                    "Hour": h, # Stored invisibly for the database later
+                    "Member": name,
+                    "Pain Score": pain,
+                    "Local Timezone": tz
+                })
+                
+        df = pd.DataFrame(data)
 
-            # 2. Draw the Altair Heatmap
-            # Green (0) -> Yellow (3) -> Orange (5) -> Red (10)
-            heatmap = alt.Chart(df).mark_rect(cornerRadius=4).encode(
-                x=alt.X('Time:O', title='Meeting Time (UTC)', sort=None),
-                y=alt.Y('Member:N', title='Team Member'),
-                color=alt.Color('Pain Score:Q', scale=alt.Scale(
-                    domain=[0, 3, 5, 10], 
-                    range=['#2e7d32', '#fbc02d', '#ed6c02', '#c62828']
-                ), legend=alt.Legend(title="Pain Level")),
-                tooltip=[
-                    alt.Tooltip('Member:N', title='Name'),
-                    alt.Tooltip('Time:O', title='UTC Time'),
-                    alt.Tooltip('Local Timezone:N', title='Timezone'),
-                    alt.Tooltip('Pain Score:Q', title='Pain Score')
-                ]
-            ).properties(
-                height=100 + (len(roster) * 40) # Dynamically scales height based on roster size
-            ).configure_axis(
-                labelFontSize=12,
-                titleFontSize=14,
-                grid=False
-            ).configure_view(
-                strokeWidth=0
-            )
+        # 2. Define the Click Selection (Selects the entire time column)
+        time_sel = alt.selection_point(fields=['Time'], name="TimeSelect")
 
-            # Render the chart natively in Streamlit
-            st.altair_chart(heatmap, use_container_width=True)
+        # 3. Draw the Altair Heatmap
+        heatmap = alt.Chart(df).mark_rect(cornerRadius=4).encode(
+            x=alt.X('Time:O', title='Meeting Time (UTC)', sort=None),
+            y=alt.Y('Member:N', title='Team Member'),
+            color=alt.Color('Pain Score:Q', scale=alt.Scale(
+                domain=[0, 3, 5, 10], 
+                range=['#2e7d32', '#fbc02d', '#ed6c02', '#c62828']
+            ), legend=alt.Legend(title="Pain Level")),
+            # Dim the unselected slots so the clicked time pops out!
+            opacity=alt.condition(time_sel, alt.value(1.0), alt.value(0.3)),
+            tooltip=[
+                alt.Tooltip('Member:N', title='Name'),
+                alt.Tooltip('Time:O', title='UTC Time'),
+                alt.Tooltip('Local Timezone:N', title='Timezone'),
+                alt.Tooltip('Pain Score:Q', title='Pain Score')
+            ]
+        ).add_params(
+            time_sel
+        ).properties(
+            height=100 + (len(roster) * 40)
+        ).configure_axis(
+            labelFontSize=12,
+            titleFontSize=14,
+            grid=False
+        ).configure_view(
+            strokeWidth=0
+        )
+
+        try:
+            # 4. Render the chart and capture the click event!
+            event = st.altair_chart(heatmap, use_container_width=True, on_select="rerun")
             
-            st.success("Hover over any block to see their exact timezone and pain score!")
+            # 5. Process the click
+            if event and "selection" in event and "TimeSelect" in event["selection"]:
+                selected_items = event["selection"]["TimeSelect"]
+                
+                if selected_items:
+                    chosen_time = selected_items[0]["Time"]
+                    
+                    # Calculate total team pain for this slot
+                    time_df = df[df["Time"] == chosen_time]
+                    total_pain = time_df["Pain Score"].sum()
+                    chosen_hour = time_df["Hour"].iloc[0]
+                    
+                    # Render the Action Menu
+                    st.markdown("---")
+                    c1, c2 = st.columns([2, 1])
+                    
+                    with c1:
+                        st.markdown(f"#### 🎯 Selected Slot: **{chosen_time}**")
+                        st.caption(f"**Total Team Pain:** {total_pain} (Lower is better)")
+                        
+                    with c2:
+                        if st.button("🗳️ Propose as Poll", type="primary", use_container_width=True):
+                            team_id = st.session_state.get('active_team_id')
+                            if team_id:
+                                # Create the Poll in the Database
+                                poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()
+                                
+                                if poll.data:
+                                    poll_id = poll.data[0]['id']
+                                    slot_dt = dt.datetime.combine(target_date, dt.time(hour=chosen_hour)).replace(tzinfo=dt.timezone.utc)
+                                    
+                                    # Insert the Option
+                                    supabase.table('poll_options').insert({
+                                        'poll_id': poll_id,
+                                        'slot_time': slot_dt.isoformat(),
+                                        'pain_score': int(total_pain)
+                                    }).execute()
+                                    
+                                    st.success(f"Poll created for {chosen_time}! Check the Pain Board.")
+                                    
+        except Exception as e:
+            # Safe Fallback just in case Streamlit is an older version
+            st.altair_chart(heatmap, use_container_width=True)
