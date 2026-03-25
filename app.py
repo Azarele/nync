@@ -31,7 +31,7 @@ st.markdown("""
     button[key="top_logout"] { color: #ff4b4b !important; border-color: #ff4b4b !important; }
     button[key="top_logout"]:hover { background-color: #ff4b4b !important; color: white !important; }
     
-    /* CSS-ONLY STARTUP LOADER (Fades out automatically, never blocks Python) */
+    /* CSS-ONLY STARTUP LOADER */
     .startup-loader {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0;
         background-color: #000000; z-index: 9999998;
@@ -41,7 +41,7 @@ st.markdown("""
     }
     @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
     
-    /* PYTHON CONTROLLED OVERLAY (For Background Syncing) */
+    /* PYTHON CONTROLLED OVERLAY */
     .nync-fullscreen-overlay {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0;
         background-color: #000000; z-index: 9999999;
@@ -56,14 +56,13 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# NATIVE CSS LOADER (Masks initial React render jumpiness)
 st.markdown("<div class='startup-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
 
 # 2. BULLETPROOF STATE INITIALIZATION
 flags = [
     "session", "user", "nav",
     "pending_restore", "clear_cookies", "sync_cookies", "save_consent_val",
-    "consent"
+    "consent", "ignore_cookies"
 ]
 for f in flags:
     if f not in st.session_state:
@@ -71,13 +70,15 @@ for f in flags:
         
 if not st.session_state.nav: 
     st.session_state.nav = "Dashboard"
+if st.session_state.ignore_cookies is None:
+    st.session_state.ignore_cookies = False
 
 # 3. INIT COOKIE MANAGER
 cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
 # =====================================================================
-# STEP 1: OAUTH CALLBACKS (Catch Google/Outlook Logins immediately)
+# STEP 1: OAUTH CALLBACKS
 # =====================================================================
 if "code" in st.query_params:
     code = st.query_params["code"]
@@ -100,6 +101,7 @@ if "code" in st.query_params:
                 st.session_state.user = res.user
                 auth.save_google_token(res.user.id, res.session)
                 st.session_state.sync_cookies = True 
+                st.session_state.ignore_cookies = False # Clear ignore flag on login
         except:
             st.error("Login Failed.")
         st.query_params.clear()
@@ -108,7 +110,7 @@ if "code" in st.query_params:
 # =====================================================================
 # STEP 2: CHECK FOR EXISTING SESSION COOKIES TO RESTORE
 # =====================================================================
-if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.pending_restore:
+if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.pending_restore and not st.session_state.ignore_cookies:
     acc = cookies.get("sb_access_token")
     ref = cookies.get("sb_refresh_token")
     if acc and ref:
@@ -153,9 +155,9 @@ if is_loading:
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
-                st.session_state.sync_cookies = True # Resave in case Supabase gave a fresh token
+                st.session_state.sync_cookies = True 
             else:
-                st.session_state.clear_cookies = True # Tokens invalid, wipe them
+                st.session_state.clear_cookies = True 
         else:
             st.session_state.clear_cookies = True
             
@@ -198,10 +200,10 @@ if is_loading:
         time.sleep(0.8)
         st.rerun()
         
-    st.stop() # Ensure the main app doesn't render while we are doing background tasks
+    st.stop()
 
 # =====================================================================
-# UI RENDERING (Only runs when fully loaded and idle)
+# UI RENDERING
 # =====================================================================
 
 if "stripe_session_id" in st.query_params and st.session_state.user:
@@ -228,9 +230,10 @@ cookie_consent.show(cookies)
 
 if not st.session_state.session:
     login.show()
-    # Catch manual logins immediately and jump to dashboard
+    # Catch manual logins immediately
     if st.session_state.session:
         st.session_state.sync_cookies = True
+        st.session_state.ignore_cookies = False # Clear ignore flag on manual login
         st.rerun()
 else:
     if 'pending_invite' in st.session_state:
@@ -278,12 +281,12 @@ else:
         if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
 
     with c_user:
-        # LOGOUT PROCESS
         if st.button("Log Out", key="top_logout", use_container_width=True):
             auth.supabase.auth.sign_out()
             st.session_state.session = None
             st.session_state.user = None
             st.session_state.clear_cookies = True 
+            st.session_state.ignore_cookies = True # Instructs app to ignore "zombie" cookies
             st.rerun()
     
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
@@ -294,7 +297,6 @@ else:
         my_teams = auth.get_user_teams(st.session_state.user.id)
         has_cal = auth.check_calendar_connected(st.session_state.user.id)
         
-        # If they lack a calendar OR a team, show the Wizard instead of the Dashboard
         if not my_teams or not has_cal:
             onboarding.show(st.session_state.user, auth.supabase, has_cal, bool(my_teams))
         else:
