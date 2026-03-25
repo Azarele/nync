@@ -68,7 +68,7 @@ def show(user, supabase, cookie_manager):
 
     st.divider()
 
-    # 3. PRIVACY & COOKIES (FIXED)
+    # 3. PRIVACY & COOKIES
     st.subheader("🍪 Privacy Preferences")
     
     # Consent is now a simple string: "accepted" or "declined"
@@ -142,8 +142,14 @@ def show(user, supabase, cookie_manager):
         with c_code:
             st.caption("Invite Code")
             st.code(invite_code, language=None)
-            st.caption("Share this code with members to let them join.")
-        
+            
+            # --- NEW: INVITE LINK GENERATION ---
+            st.caption("Invite Link")
+            invite_link = f"https://nyncapp.streamlit.app/?invite={invite_code}"
+            st.code(invite_link, language=None)
+            st.caption("Share this link with members to let them join instantly.")
+            # -----------------------------------
+            
         with c_settings:
             with st.expander("🔌 Webhook Settings", expanded=True):
                 st.caption("Send notifications to Discord/Teams")
