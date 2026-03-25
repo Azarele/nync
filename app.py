@@ -78,6 +78,16 @@ cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
 # =====================================================================
+# NEW: CATCH URL PARAMS IMMEDIATELY BEFORE OAUTH CLEARS THEM
+# =====================================================================
+if "invite" in st.query_params: 
+    st.session_state.pending_invite = st.query_params["invite"]
+
+if "vote" in st.query_params and not st.session_state.session:
+    st.session_state.pending_vote_id = st.query_params["vote"]
+    if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
+
+# =====================================================================
 # STEP 1: OAUTH CALLBACKS
 # =====================================================================
 if "code" in st.query_params:
@@ -101,7 +111,7 @@ if "code" in st.query_params:
                 st.session_state.user = res.user
                 auth.save_google_token(res.user.id, res.session)
                 st.session_state.sync_cookies = True 
-                st.session_state.ignore_cookies = False # Clear ignore flag on login
+                st.session_state.ignore_cookies = False
         except:
             st.error("Login Failed.")
         st.query_params.clear()
@@ -219,23 +229,16 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
     st.query_params.clear()
     st.rerun()
 
-if "vote" in st.query_params and not st.session_state.session:
-    st.session_state.pending_vote_id = st.query_params["vote"]
-    if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
-
-if "invite" in st.query_params: 
-    st.session_state.pending_invite = st.query_params["invite"]
-
 cookie_consent.show(cookies)
 
 if not st.session_state.session:
     login.show()
-    # Catch manual logins immediately
     if st.session_state.session:
         st.session_state.sync_cookies = True
-        st.session_state.ignore_cookies = False # Clear ignore flag on manual login
+        st.session_state.ignore_cookies = False 
         st.rerun()
 else:
+    # Handle the stored invite code from the URL
     if 'pending_invite' in st.session_state:
         code = st.session_state.pending_invite
         if auth.join_team_by_code(st.session_state.user.id, code):
@@ -286,7 +289,7 @@ else:
             st.session_state.session = None
             st.session_state.user = None
             st.session_state.clear_cookies = True 
-            st.session_state.ignore_cookies = True # Instructs app to ignore "zombie" cookies
+            st.session_state.ignore_cookies = True 
             st.rerun()
     
     st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
