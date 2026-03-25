@@ -334,6 +334,15 @@ def get_user_teams(user_id):
     except: return {}
 
 @st.cache_data(ttl=60)
+def check_calendar_connected(user_id):
+    """Quick check to see if the user has completed step 1 of onboarding"""
+    if not supabase: return False
+    try:
+        res = supabase.table("calendar_connections").select("id").eq("user_id", user_id).limit(1).execute()
+        return len(res.data) > 0
+    except: return False
+
+@st.cache_data(ttl=60)
 def get_team_roster(team_id):
     roster = []
     try:

@@ -4,7 +4,8 @@ import base64
 import html
 import auth_utils as auth
 import extra_streamlit_components as stx
-from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent
+# ADDED ONBOARDING TO IMPORTS
+from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent, onboarding
 import datetime as dt
 
 # 1. SETUP
@@ -46,7 +47,6 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 2. BULLETPROOF STATE INITIALIZATION
-# This prevents ANY KeyErrors or AttributeErrors from crashing the app
 flags = [
     "app_ready", "session", "user", "nav", "restore_attempted",
     "pending_restore", "clear_cookies", "sync_cookies", "save_consent_val",
@@ -64,16 +64,16 @@ cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
 # =====================================================================
-# STEP 1: PRE-LOAD BARRIER (Wait for browser to send cookies)
+# STEP 1: PRE-LOAD BARRIER 
 # =====================================================================
 if not st.session_state.app_ready:
     st.markdown("<div class='nync-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
-    time.sleep(0.8) # Give the browser plenty of time
+    time.sleep(0.8)
     st.session_state.app_ready = True
     st.rerun()
 
 # =====================================================================
-# STEP 2: OAUTH CALLBACKS (Catch Google/Outlook Logins immediately)
+# STEP 2: OAUTH CALLBACKS
 # =====================================================================
 if "code" in st.query_params:
     code = st.query_params["code"]
@@ -95,20 +95,20 @@ if "code" in st.query_params:
                 st.session_state.session = res.session
                 st.session_state.user = res.user
                 auth.save_google_token(res.user.id, res.session)
-                st.session_state.sync_cookies = True # Triggers saving logic
+                st.session_state.sync_cookies = True 
         except:
             st.error("Login Failed.")
         st.query_params.clear()
         st.rerun()
 
 # =====================================================================
-# STEP 3: CHECK FOR EXISTING SESSION COOKIES TO RESTORE
+# STEP 3: RESTORE SESSION
 # =====================================================================
 if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.restore_attempted:
     st.session_state.restore_attempted = True
     if cookies.get("sb_access_token") and cookies.get("sb_refresh_token"):
         st.session_state.pending_restore = True
-        st.rerun() # Trigger the loader to gracefully validate the tokens
+        st.rerun() 
 
 # =====================================================================
 # STEP 4: TOKEN ROTATION CHECK
@@ -121,7 +121,7 @@ if st.session_state.session and not st.session_state.clear_cookies:
         st.rerun()
 
 # =====================================================================
-# STEP 5: LOADER STATE MACHINE (Executes all background actions safely)
+# STEP 5: LOADER STATE MACHINE 
 # =====================================================================
 is_loading = False
 load_msg = ""
@@ -141,7 +141,6 @@ if is_loading:
     if st.session_state.pending_restore:
         st.session_state.pending_restore = False
         
-        # CRITICAL FIX: Safe .get() prevents KeyErrors if cookies drop out
         acc = cookies.get("sb_access_token")
         ref = cookies.get("sb_refresh_token")
         
@@ -150,9 +149,9 @@ if is_loading:
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
-                st.session_state.sync_cookies = True # Resave in case Supabase gave a fresh token
+                st.session_state.sync_cookies = True
             else:
-                st.session_state.clear_cookies = True # Tokens invalid, wipe them
+                st.session_state.clear_cookies = True
         else:
             st.session_state.clear_cookies = True
             
@@ -195,10 +194,10 @@ if is_loading:
         time.sleep(1.0)
         st.rerun()
         
-    st.stop() # Ensure the main app doesn't render while we are doing background tasks
+    st.stop()
 
 # =====================================================================
-# UI RENDERING (Only runs when fully loaded and idle)
+# UI RENDERING
 # =====================================================================
 
 if "stripe_session_id" in st.query_params and st.session_state.user:
@@ -225,7 +224,6 @@ cookie_consent.show(cookies)
 
 if not st.session_state.session:
     login.show()
-    # Catch manual logins immediately and jump to dashboard
     if st.session_state.session:
         st.session_state.sync_cookies = True
         st.rerun()
@@ -275,7 +273,6 @@ else:
         if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
 
     with c_user:
-        # LOGOUT PROCESS
         if st.button("Log Out", key="top_logout", use_container_width=True):
             auth.supabase.auth.sign_out()
             st.session_state.session = None
@@ -288,10 +285,17 @@ else:
     nav = st.session_state.nav
 
     if nav == "Dashboard":
+        # =======================================================
+        # NEW ONBOARDING WIZARD LOGIC
+        # =======================================================
         my_teams = auth.get_user_teams(st.session_state.user.id)
-        if not my_teams:
-            st.info("👈 Create a Team in Settings.")
+        has_cal = auth.check_calendar_connected(st.session_state.user.id)
+        
+        # If they lack a calendar OR a team, show the Wizard instead of the Dashboard
+        if not my_teams or not has_cal:
+            onboarding.show(st.session_state.user, auth.supabase, has_cal, bool(my_teams))
         else:
+            # Everything is set up! Render normal Dashboard.
             if 'active_team' not in st.session_state or st.session_state.active_team not in my_teams:
                 st.session_state.active_team = list(my_teams.keys())[0]
             
