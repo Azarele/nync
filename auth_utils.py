@@ -420,6 +420,87 @@ def remove_team_member(team_id, member_id_to_remove, current_user_id):
         st.error(f"Failed to remove member: {e}")
         return False
 
+def remove_team_member_by_row(row_id, team_id, current_user_id):
+    if not supabase: return False
+    try:
+        # 1. Admin check
+        admin_check = supabase.table('team_members').select('role').eq('team_id', team_id).eq('user_id', current_user_id).execute()
+        if not admin_check.data or admin_check.data[0].get('role') != 'admin':
+            st.error("Only Admins can remove members.")
+            return False
+
+        # 2. Prevent removing self if last admin
+        target = supabase.table('team_members').select('user_id').eq('id', row_id).execute()
+        if target.data and target.data[0].get('user_id') == current_user_id:
+            admin_count = supabase.table('team_members').select('*', count='exact').eq('team_id', team_id).eq('role', 'admin').execute().count
+            if admin_count <= 1:
+                st.error("Cannot remove yourself. You are the only admin.")
+                return False
+
+        # 3. Delete the specific row (fixes duplicates)
+        supabase.table('team_members').delete().eq('id', row_id).execute()
+        get_team_roster.clear()
+        get_user_teams.clear()
+        return True
+    except Exception as e:
+        print(f"Error removing member: {e}")
+        return False
+
+def leave_team(team_id, current_user_id):
+    if not supabase: return False
+    try:
+        # Prevent leaving if last admin
+        admin_count = supabase.table('team_members').select('*', count='exact').eq('team_id', team_id).eq('role', 'admin').execute().count
+        my_role = supabase.table('team_members').select('role').eq('team_id', team_id).eq('user_id', current_user_id).execute()
+        if my_role.data and my_role.data[0].get('role') == 'admin' and admin_count <= 1:
+            st.error("You cannot leave as the only Admin. Delete the team or promote someone else.")
+            return False
+            
+        supabase.table('team_members').delete().eq('team_id', team_id).eq('user_id', current_user_id).execute()
+        get_user_teams.clear()
+        get_team_roster.clear()
+        return True
+    except Exception as e:
+        print(e)
+        return False
+
+def add_ghost_member(team_id, name, email, timezone, current_user_id):
+    if not supabase: return False
+    try:
+        admin_check = supabase.table('team_members').select('role').eq('team_id', team_id).eq('user_id', current_user_id).execute()
+        if not admin_check.data or admin_check.data[0].get('role') != 'admin':
+            return False
+            
+        supabase.table('team_members').insert({
+            'team_id': team_id,
+            'ghost_name': name,
+            'ghost_email': email,
+            'ghost_timezone': timezone,
+            'role': 'member'
+        }).execute()
+        
+        get_team_roster.clear()
+        return True
+    except Exception as e:
+        print(f"Error adding ghost: {e}")
+        return False
+
+def update_member_timezone(row_id, user_id, new_timezone, is_ghost):
+    if not supabase: return False
+    try:
+        if is_ghost:
+            supabase.table('team_members').update({'ghost_timezone': new_timezone}).eq('id', row_id).execute()
+        else:
+            # Note: Supabase RLS might block updating real users profiles, but we try gracefully
+            res = supabase.table('profiles').update({'default_timezone': new_timezone}).eq('id', user_id).execute()
+            if not res.data: pass 
+            
+        get_team_roster.clear()
+        return True
+    except Exception as e:
+        print(f"Error updating tz: {e}")
+        return False
+
 def join_team_by_code(user_id, code):
     try:
         # 1. Clean the code: Remove accidental spaces and force UPPERCASE

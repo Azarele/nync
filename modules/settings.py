@@ -79,7 +79,7 @@ def show(user, supabase, cookie_manager):
         
         with st.form("cookie_update_form"):
             st.checkbox("Essential Cookies (Required)", value=True, disabled=True)
-            new_consent = st.checkbox("Analytics & Marketing Offers", value=is_accepted, help="Helps us improve and show you relevant upgrades.")
+            new_consent = st.checkbox("Analytics & Marketing Offers", value=is_accepted)
             
             if st.form_submit_button("Save Preferences"):
                 val = "accepted" if new_consent else "declined"
@@ -126,7 +126,6 @@ def show(user, supabase, cookie_manager):
         selected_team_name = st.selectbox("Select a Team to Manage", team_names)
         selected_tid = my_teams[selected_team_name]
         
-        # Fetch the user's specific role in this team
         try:
             role_check = supabase.table('team_members').select('role').eq('team_id', selected_tid).eq('user_id', user.id).execute()
             my_role = role_check.data[0]['role'] if role_check.data else 'member'
@@ -141,7 +140,6 @@ def show(user, supabase, cookie_manager):
             invite_code = "Error"
             webhook = ""
 
-        # Display the Role Badge
         st.markdown(f"#### 🛡️ {selected_team_name} <span style='font-size:14px; background:#444; padding:2px 8px; border-radius:4px;'>{my_role.upper()}</span>", unsafe_allow_html=True)
         
         c_code, c_settings = st.columns([1, 1.5])
@@ -153,40 +151,81 @@ def show(user, supabase, cookie_manager):
             st.caption("Invite Link")
             invite_link = f"https://nyncapp.streamlit.app/?invite={invite_code}"
             st.code(invite_link, language=None)
-            st.caption("Share this link with members to let them join instantly.")
             
         with c_settings:
-            # --- NEW: TEAM ROSTER MANAGEMENT ---
+            # --- REBUILT: TEAM ROSTER MANAGEMENT ---
             with st.expander("👥 Team Roster", expanded=True):
                 try:
-                    # Fetch real users from the database for this team
-                    roster_data = supabase.table('team_members').select('user_id, role, profiles(email)').eq('team_id', selected_tid).execute()
+                    # Safely fetch all columns needed to resolve ghosts and real users
+                    roster_data = supabase.table('team_members').select('id, user_id, role, ghost_name, ghost_email, ghost_timezone, profiles(email, default_timezone)').eq('team_id', selected_tid).execute()
                     
                     if roster_data.data:
+                        COMMON_TZS = ["UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Europe/London", "Europe/Paris", "Asia/Dubai", "Asia/Tokyo", "Australia/Sydney"]
+                        
                         for member in roster_data.data:
-                            m_id = member.get('user_id')
+                            row_id = member.get('id')
+                            m_user_id = member.get('user_id')
                             m_role = member.get('role', 'member')
-                            m_email = member.get('profiles', {}).get('email', 'Unknown User')
+                            is_ghost = (m_user_id is None)
                             
-                            col1, col2 = st.columns([3, 1])
-                            
-                            # Display Name & Role
-                            if m_id == user.id:
-                                col1.markdown(f"**{m_email}** (You) - `{m_role}`")
+                            # Parse User Info
+                            if is_ghost:
+                                m_name = member.get('ghost_name') or "Dummy"
+                                m_email = member.get('ghost_email') or ""
+                                m_tz = member.get('ghost_timezone') or "UTC"
+                                display_name = f"👻 {m_name}" + (f" ({m_email})" if m_email else "")
                             else:
-                                col1.markdown(f"{m_email} - `{m_role}`")
+                                prof = member.get('profiles') or {}
+                                m_email = prof.get('email', 'Unknown User')
+                                m_tz = prof.get('default_timezone') or "UTC"
+                                display_name = f"👤 {m_email}"
                                 
-                            # Admin Action: Kick Member
+                            c1, c2, c3 = st.columns([2.5, 2, 1])
+                            
+                            if m_user_id == user.id:
+                                c1.markdown(f"**{display_name}** (You)")
+                            else:
+                                c1.markdown(f"**{display_name}**")
+                                
                             if my_role == 'admin':
-                                # Don't show a kick button for yourself here (use Leave Team below instead)
-                                if m_id != user.id:
-                                    if col2.button("Kick", key=f"kick_{m_id}", type="secondary", use_container_width=True):
-                                        if auth.remove_team_member(selected_tid, m_id, user.id):
-                                            st.toast(f"Removed {m_email} from the team.")
-                                            time.sleep(1)
+                                # Timezone Selector
+                                tz_options = COMMON_TZS if m_tz in COMMON_TZS else COMMON_TZS + [m_tz]
+                                new_tz = c2.selectbox("TZ", tz_options, index=tz_options.index(m_tz), key=f"tz_{row_id}", label_visibility="collapsed")
+                                
+                                if new_tz != m_tz:
+                                    auth.update_member_timezone(row_id, m_user_id, new_tz, is_ghost)
+                                    st.rerun()
+                                    
+                                # Kick Button
+                                if m_user_id != user.id:
+                                    if c3.button("Kick", key=f"kick_{row_id}", type="secondary", use_container_width=True):
+                                        if auth.remove_team_member_by_row(row_id, selected_tid, user.id):
+                                            st.toast(f"Removed member.")
+                                            time.sleep(0.5)
                                             st.rerun()
+                            else:
+                                c2.write(f"🌍 {m_tz}")
+                                
+                        # --- ADD DUMMY MEMBER FORM ---
+                        if my_role == 'admin':
+                            st.markdown("---")
+                            st.markdown("##### ➕ Add Dummy Member")
+                            with st.form(f"add_ghost_{selected_tid}", clear_on_submit=True):
+                                col1, col2, col3 = st.columns(3)
+                                g_name = col1.text_input("Name", placeholder="John Doe")
+                                g_email = col2.text_input("Email", placeholder="(Optional)")
+                                g_tz = col3.selectbox("Timezone", COMMON_TZS)
+                                
+                                if st.form_submit_button("Add Dummy"):
+                                    if g_name:
+                                        auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
+                                        st.success("Dummy added!")
+                                        time.sleep(0.5)
+                                        st.rerun()
+                                    else:
+                                        st.warning("Name is required.")
                 except Exception as e:
-                    st.error("Could not load roster.")
+                    st.error(f"Could not load roster: {e}")
             
             # --- WEBHOOK SETTINGS ---
             if my_role == 'admin':
@@ -202,9 +241,9 @@ def show(user, supabase, cookie_manager):
             # --- LEAVE TEAM ---
             st.write("")
             if st.button("Leave Team", type="secondary", key=f"leave_{selected_tid}"):
-                if auth.remove_team_member(selected_tid, user.id, user.id):
+                if auth.leave_team(selected_tid, user.id):
                     st.toast("You have left the team.")
-                    time.sleep(1)
+                    time.sleep(0.5)
                     st.rerun()
     
     st.divider()
