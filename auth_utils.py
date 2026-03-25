@@ -404,16 +404,44 @@ def join_team_by_code(user_id, code):
 
 def create_team(user_id, name):
     import secrets, string
+    # Generate a random 4-character invite code
     code = "NYNC-" + ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+    
     try:
-        t = supabase.table('teams').insert({'name': name, 'invite_code': code, 'created_by': user_id}).execute()
-        if not t.data: return False
+        # 1. Insert the team (Removed 'created_by' as it likely caused the crash)
+        t = supabase.table('teams').insert({
+            'name': name, 
+            'invite_code': code
+        }).execute()
+        
+        if not t.data: 
+            st.error("Database returned no data. Check Row Level Security (RLS) policies.")
+            return False
+            
         tid = t.data[0]['id']
-        supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id, 'role': 'admin'}).execute()
+        
+        # 2. Insert the user as the admin of the team
+        supabase.table('team_members').insert({
+            'team_id': tid, 
+            'user_id': user_id, 
+            'role': 'admin'
+        }).execute()
+        
+        # 3. Update Session State and clear the cache
         st.session_state.active_team = name
-        get_user_teams.clear()
+        
+        try:
+            get_user_teams.clear()
+        except: 
+            pass # Catch if cache hasn't initialized yet
+            
         return True
-    except: return False
+        
+    except Exception as e: 
+        # This will print the exact database error on your screen so we can see what's wrong!
+        st.error(f"Database Error: {e}")
+        print(f"Team Creation Error: {e}")
+        return False
 
 def create_stripe_portal_session(user_email):
     if "stripe" not in st.secrets: return None
