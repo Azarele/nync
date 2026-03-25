@@ -2,6 +2,7 @@ import streamlit as st
 import auth_utils as auth
 import datetime as dt
 import time
+import pytz  # <-- Added pytz library
 
 def show(user, supabase, cookie_manager):
     st.header("⚙️ Settings")
@@ -156,11 +157,11 @@ def show(user, supabase, cookie_manager):
             # --- REBUILT: TEAM ROSTER MANAGEMENT ---
             with st.expander("👥 Team Roster", expanded=True):
                 try:
-                    # Safely fetch all columns needed to resolve ghosts and real users
                     roster_data = supabase.table('team_members').select('id, user_id, role, ghost_name, ghost_email, ghost_timezone, profiles(email, default_timezone)').eq('team_id', selected_tid).execute()
                     
                     if roster_data.data:
-                        COMMON_TZS = ["UTC", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Europe/London", "Europe/Paris", "Asia/Dubai", "Asia/Tokyo", "Australia/Sydney"]
+                        # Grab all valid timezones from pytz
+                        ALL_TZS = pytz.all_timezones
                         
                         for member in roster_data.data:
                             row_id = member.get('id')
@@ -188,8 +189,8 @@ def show(user, supabase, cookie_manager):
                                 c1.markdown(f"**{display_name}**")
                                 
                             if my_role == 'admin':
-                                # Timezone Selector
-                                tz_options = COMMON_TZS if m_tz in COMMON_TZS else COMMON_TZS + [m_tz]
+                                # Timezone Selector - Includes fallback just in case database has a weird legacy timezone
+                                tz_options = ALL_TZS if m_tz in ALL_TZS else ALL_TZS + [m_tz]
                                 new_tz = c2.selectbox("TZ", tz_options, index=tz_options.index(m_tz), key=f"tz_{row_id}", label_visibility="collapsed")
                                 
                                 if new_tz != m_tz:
@@ -214,7 +215,10 @@ def show(user, supabase, cookie_manager):
                                 col1, col2, col3 = st.columns(3)
                                 g_name = col1.text_input("Name", placeholder="John Doe")
                                 g_email = col2.text_input("Email", placeholder="(Optional)")
-                                g_tz = col3.selectbox("Timezone", COMMON_TZS)
+                                
+                                # Default to UTC, but load all timezones
+                                default_tz_index = ALL_TZS.index("UTC") if "UTC" in ALL_TZS else 0
+                                g_tz = col3.selectbox("Timezone", ALL_TZS, index=default_tz_index)
                                 
                                 if st.form_submit_button("Add Dummy"):
                                     if g_name:
