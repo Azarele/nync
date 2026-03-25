@@ -71,7 +71,6 @@ def show(user, supabase, cookie_manager):
     # 3. PRIVACY & COOKIES
     st.subheader("🍪 Privacy Preferences")
     
-    # Consent is now a simple string: "accepted" or "declined"
     current_consent = st.session_state.get('consent')
     is_accepted = (current_consent == "accepted")
     
@@ -84,7 +83,6 @@ def show(user, supabase, cookie_manager):
             
             if st.form_submit_button("Save Preferences"):
                 val = "accepted" if new_consent else "declined"
-                # We hand this off to app.py to physically save the cookie using our background state machine
                 st.session_state.save_consent_val = val
                 st.success("Preferences Saved!")
                 time.sleep(0.5)
@@ -129,9 +127,12 @@ def show(user, supabase, cookie_manager):
         selected_tid = my_teams[selected_team_name]
         
         # Fetch the user's specific role in this team
-        role_check = supabase.table('team_members').select('role').eq('team_id', selected_tid).eq('user_id', user.id).execute()
-        my_role = role_check.data[0]['role'] if role_check.data else 'member'
-        
+        try:
+            role_check = supabase.table('team_members').select('role').eq('team_id', selected_tid).eq('user_id', user.id).execute()
+            my_role = role_check.data[0]['role'] if role_check.data else 'member'
+        except:
+            my_role = 'member'
+            
         try:
             t_data = supabase.table('teams').select('invite_code, webhook_url').eq('id', selected_tid).single().execute()
             invite_code = t_data.data.get('invite_code', 'N/A')
@@ -155,9 +156,41 @@ def show(user, supabase, cookie_manager):
             st.caption("Share this link with members to let them join instantly.")
             
         with c_settings:
-            # ENFORCE ROLE LOGIC: Only Admins can see/edit Webhooks
+            # --- NEW: TEAM ROSTER MANAGEMENT ---
+            with st.expander("👥 Team Roster", expanded=True):
+                try:
+                    # Fetch real users from the database for this team
+                    roster_data = supabase.table('team_members').select('user_id, role, profiles(email)').eq('team_id', selected_tid).execute()
+                    
+                    if roster_data.data:
+                        for member in roster_data.data:
+                            m_id = member.get('user_id')
+                            m_role = member.get('role', 'member')
+                            m_email = member.get('profiles', {}).get('email', 'Unknown User')
+                            
+                            col1, col2 = st.columns([3, 1])
+                            
+                            # Display Name & Role
+                            if m_id == user.id:
+                                col1.markdown(f"**{m_email}** (You) - `{m_role}`")
+                            else:
+                                col1.markdown(f"{m_email} - `{m_role}`")
+                                
+                            # Admin Action: Kick Member
+                            if my_role == 'admin':
+                                # Don't show a kick button for yourself here (use Leave Team below instead)
+                                if m_id != user.id:
+                                    if col2.button("Kick", key=f"kick_{m_id}", type="secondary", use_container_width=True):
+                                        if auth.remove_team_member(selected_tid, m_id, user.id):
+                                            st.toast(f"Removed {m_email} from the team.")
+                                            time.sleep(1)
+                                            st.rerun()
+                except Exception as e:
+                    st.error("Could not load roster.")
+            
+            # --- WEBHOOK SETTINGS ---
             if my_role == 'admin':
-                with st.expander("🔌 Webhook Settings", expanded=True):
+                with st.expander("🔌 Webhook Settings"):
                     st.caption("Send notifications to Discord/Teams")
                     new_hook = st.text_input("Webhook URL", value=webhook, key=f"wh_{selected_tid}")
                     if st.button("Save Webhook", key=f"save_{selected_tid}"):
@@ -165,6 +198,16 @@ def show(user, supabase, cookie_manager):
                         st.success("Saved!")
             else:
                 st.info("🔒 You must be an **Admin** to edit team settings.")
+
+            # --- LEAVE TEAM ---
+            st.write("")
+            if st.button("Leave Team", type="secondary", key=f"leave_{selected_tid}"):
+                if auth.remove_team_member(selected_tid, user.id, user.id):
+                    st.toast("You have left the team.")
+                    time.sleep(1)
+                    st.rerun()
+    
+    st.divider()
     
     # 6. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
@@ -173,6 +216,5 @@ def show(user, supabase, cookie_manager):
             if auth.delete_user_data(user.id):
                 auth.supabase.auth.sign_out()
                 st.session_state.session = None
-                # Set flags for app.py to process background cookie clearing
                 st.session_state.clear_cookies = True
                 st.rerun()

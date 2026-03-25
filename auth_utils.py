@@ -388,6 +388,38 @@ def check_team_status(team_id):
         print(f"Status check error: {e}")
         return 'active'
 
+def remove_team_member(team_id, member_id_to_remove, current_user_id):
+    """
+    Allows an Admin to remove a user from the team. 
+    Includes a safety check to prevent removing the last admin.
+    """
+    if not supabase: return False
+    try:
+        # 1. Verify the current user is actually an Admin
+        admin_check = supabase.table('team_members').select('role').eq('team_id', team_id).eq('user_id', current_user_id).execute()
+        if not admin_check.data or admin_check.data[0].get('role') != 'admin':
+            st.error("Only Admins can remove members.")
+            return False
+
+        # 2. Prevent removing the last admin
+        if member_id_to_remove == current_user_id:
+            admin_count = supabase.table('team_members').select('*', count='exact').eq('team_id', team_id).eq('role', 'admin').execute().count
+            if admin_count <= 1:
+                st.error("You cannot leave the team because you are the only Admin. Assign another Admin first or delete the team.")
+                return False
+
+        # 3. Execute the deletion
+        supabase.table('team_members').delete().eq('team_id', team_id).eq('user_id', member_id_to_remove).execute()
+        
+        # 4. Clear caches to instantly update the UI
+        get_team_roster.clear()
+        get_user_teams.clear()
+        return True
+        
+    except Exception as e:
+        st.error(f"Failed to remove member: {e}")
+        return False
+
 def join_team_by_code(user_id, code):
     try:
         # 1. Clean the code: Remove accidental spaces and force UPPERCASE
