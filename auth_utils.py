@@ -408,10 +408,11 @@ def create_team(user_id, name):
     code = "NYNC-" + ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(4))
     
     try:
-        # 1. Insert the team (Removed 'created_by' as it likely caused the crash)
+        # 1. Insert the team (Added 'created_by' back as required by your database)
         t = supabase.table('teams').insert({
             'name': name, 
-            'invite_code': code
+            'invite_code': code,
+            'created_by': user_id  # <--- This fixes the crash!
         }).execute()
         
         if not t.data: 
@@ -420,25 +421,24 @@ def create_team(user_id, name):
             
         tid = t.data[0]['id']
         
-        # 2. Insert the user as the admin of the team
+        # 2. Insert the user as the admin of the newly created team
         supabase.table('team_members').insert({
             'team_id': tid, 
             'user_id': user_id, 
             'role': 'admin'
         }).execute()
         
-        # 3. Update Session State and clear the cache
+        # 3. Update Session State and clear the cache so it shows up instantly
         st.session_state.active_team = name
         
         try:
             get_user_teams.clear()
         except: 
-            pass # Catch if cache hasn't initialized yet
+            pass 
             
         return True
         
     except Exception as e: 
-        # This will print the exact database error on your screen so we can see what's wrong!
         st.error(f"Database Error: {e}")
         print(f"Team Creation Error: {e}")
         return False
