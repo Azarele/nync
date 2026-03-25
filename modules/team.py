@@ -99,11 +99,9 @@ def show(user, supabase):
                             
                         if my_role == 'admin':
                             tz_options = ALL_TZS if m_tz in ALL_TZS else ALL_TZS + [m_tz]
-                            new_tz = c2.selectbox("TZ", tz_options, index=tz_options.index(m_tz), key=f"tz_{row_id}", label_visibility="collapsed")
                             
-                            if new_tz != m_tz:
-                                auth.update_member_timezone(row_id, m_user_id, new_tz, is_ghost)
-                                st.rerun()
+                            # Render the selectbox, but DON'T automatically save to the database yet.
+                            c2.selectbox("TZ", tz_options, index=tz_options.index(m_tz), key=f"tz_{row_id}", label_visibility="collapsed")
                                 
                             if m_user_id != user.id:
                                 if c3.button("Kick", key=f"kick_{row_id}", type="secondary", use_container_width=True):
@@ -113,7 +111,33 @@ def show(user, supabase):
                                         st.rerun()
                         else:
                             c2.write(f"🌍 {m_tz}")
+                    
+                    # --- NEW: BATCH SAVE TIMEZONES BUTTON ---
+                    if my_role == 'admin':
+                        st.write("") # Spacing
+                        if st.button("💾 Save Timezone Changes", type="primary", use_container_width=True):
+                            changes_made = False
+                            # Loop through roster and see what was changed in the dropdowns
+                            for member in roster_data.data:
+                                r_id = member.get('id')
+                                u_id = member.get('user_id')
+                                is_g = (u_id is None)
+                                
+                                old_tz = member.get('ghost_timezone') or "UTC" if is_g else (member.get('profiles') or {}).get('default_timezone') or "UTC"
+                                new_tz = st.session_state.get(f"tz_{r_id}")
+                                
+                                if new_tz and new_tz != old_tz:
+                                    auth.update_member_timezone(r_id, u_id, new_tz, is_g)
+                                    changes_made = True
                             
+                            if changes_made:
+                                st.success("Timezones updated successfully!")
+                                time.sleep(0.5)
+                                st.rerun()
+                            else:
+                                st.info("No changes to save.")
+                            
+                    # --- ADD DUMMY MEMBER ---
                     if my_role == 'admin':
                         st.markdown("---")
                         st.markdown("##### ➕ Add Dummy Member")
