@@ -371,15 +371,36 @@ def check_team_status(team_id):
 
 def join_team_by_code(user_id, code):
     try:
-        t = supabase.table('teams').select('id, name').eq('invite_code', code).execute()
-        if not t.data: return False
+        # 1. Clean the code: Remove accidental spaces and force UPPERCASE
+        clean_code = str(code).strip().upper()
+        
+        # 2. Check if the team exists
+        t = supabase.table('teams').select('id, name').eq('invite_code', clean_code).execute()
+        if not t.data: 
+            return False
+            
         tid, name = t.data[0]['id'], t.data[0]['name']
-        if supabase.table('team_members').select('*').eq('team_id', tid).eq('user_id', user_id).execute().data: return True
-        supabase.table('team_members').insert({'team_id': tid, 'user_id': user_id}).execute()
+        
+        # 3. Check if the user is already a member
+        existing = supabase.table('team_members').select('*').eq('team_id', tid).eq('user_id', user_id).execute()
+        if existing.data: 
+            return True
+            
+        # 4. Insert the new member
+        supabase.table('team_members').insert({
+            'team_id': tid, 
+            'user_id': user_id,
+            'role': 'member' # Added explicit role for safety
+        }).execute()
+        
+        # 5. Set active team and clear cache
         st.session_state.active_team = name
         get_user_teams.clear() 
         return True
-    except: return False
+        
+    except Exception as e: 
+        print(f"Error joining team: {e}") # This will log the exact issue to your console if it fails
+        return False
 
 def create_team(user_id, name):
     import secrets, string
