@@ -128,6 +128,10 @@ def show(user, supabase, cookie_manager):
         selected_team_name = st.selectbox("Select a Team to Manage", team_names)
         selected_tid = my_teams[selected_team_name]
         
+        # Fetch the user's specific role in this team
+        role_check = supabase.table('team_members').select('role').eq('team_id', selected_tid).eq('user_id', user.id).execute()
+        my_role = role_check.data[0]['role'] if role_check.data else 'member'
+        
         try:
             t_data = supabase.table('teams').select('invite_code, webhook_url').eq('id', selected_tid).single().execute()
             invite_code = t_data.data.get('invite_code', 'N/A')
@@ -136,29 +140,31 @@ def show(user, supabase, cookie_manager):
             invite_code = "Error"
             webhook = ""
 
-        st.markdown(f"#### 🛡️ {selected_team_name}")
+        # Display the Role Badge
+        st.markdown(f"#### 🛡️ {selected_team_name} <span style='font-size:14px; background:#444; padding:2px 8px; border-radius:4px;'>{my_role.upper()}</span>", unsafe_allow_html=True)
+        
         c_code, c_settings = st.columns([1, 1.5])
         
         with c_code:
             st.caption("Invite Code")
             st.code(invite_code, language=None)
             
-            # --- NEW: INVITE LINK GENERATION ---
             st.caption("Invite Link")
             invite_link = f"https://nyncapp.streamlit.app/?invite={invite_code}"
             st.code(invite_link, language=None)
             st.caption("Share this link with members to let them join instantly.")
-            # -----------------------------------
             
         with c_settings:
-            with st.expander("🔌 Webhook Settings", expanded=True):
-                st.caption("Send notifications to Discord/Teams")
-                new_hook = st.text_input("Webhook URL", value=webhook, key=f"wh_{selected_tid}")
-                if st.button("Save Webhook", key=f"save_{selected_tid}"):
-                    supabase.table('teams').update({'webhook_url': new_hook}).eq('id', selected_tid).execute()
-                    st.success("Saved!")
-    
-    st.divider()
+            # ENFORCE ROLE LOGIC: Only Admins can see/edit Webhooks
+            if my_role == 'admin':
+                with st.expander("🔌 Webhook Settings", expanded=True):
+                    st.caption("Send notifications to Discord/Teams")
+                    new_hook = st.text_input("Webhook URL", value=webhook, key=f"wh_{selected_tid}")
+                    if st.button("Save Webhook", key=f"save_{selected_tid}"):
+                        supabase.table('teams').update({'webhook_url': new_hook}).eq('id', selected_tid).execute()
+                        st.success("Saved!")
+            else:
+                st.info("🔒 You must be an **Admin** to edit team settings.")
     
     # 6. DANGER ZONE
     if st.checkbox("Show Danger Zone"):

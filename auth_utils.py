@@ -358,16 +358,35 @@ def get_team_roster(team_id):
 
 def check_team_status(team_id):
     try:
-        team = supabase.table('teams').select('trial_ends_at').eq('id', team_id).single().execute()
+        # 1. Fetch the team data
+        team = supabase.table('teams').select('trial_ends_at, created_by').eq('id', team_id).single().execute()
         if not team.data: return 'active'
+        
+        # 2. Check the creator's subscription tier
+        creator_id = team.data.get('created_by')
+        tier = 'free'
+        if creator_id:
+            prof = supabase.table('profiles').select('subscription_tier').eq('id', creator_id).maybe_single().execute()
+            if prof and prof.data:
+                tier = prof.data.get('subscription_tier', 'free').lower()
+                
+        # 3. IF PAID TIER: Never lock the team!
+        if tier in ['squad', 'guild', 'empire']:
+            return 'active'
+
+        # 4. IF FREE TIER: Enforce the 14-day & 3-member limit
         trial_end_str = team.data.get('trial_ends_at')
         if not trial_end_str: return 'active'
         trial_end = dt.datetime.fromisoformat(trial_end_str.replace('Z', '+00:00'))
         is_expired = dt.datetime.now(trial_end.tzinfo) > trial_end
+        
         count = supabase.table('team_members').select('*', count='exact').eq('team_id', team_id).execute().count
         if is_expired and count > 3: return 'locked'
+        
         return 'active'
-    except: return 'active'
+    except Exception as e: 
+        print(f"Status check error: {e}")
+        return 'active'
 
 def join_team_by_code(user_id, code):
     try:
