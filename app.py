@@ -4,7 +4,6 @@ import base64
 import html
 import auth_utils as auth
 import extra_streamlit_components as stx
-# ADDED ONBOARDING TO IMPORTS
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent, onboarding
 import datetime as dt
 
@@ -12,7 +11,7 @@ import datetime as dt
 try:
     st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
 except:
-    pass # Catch Streamlit's double-init error silently
+    pass
 
 st.markdown("""
 <style>
@@ -32,7 +31,18 @@ st.markdown("""
     button[key="top_logout"] { color: #ff4b4b !important; border-color: #ff4b4b !important; }
     button[key="top_logout"]:hover { background-color: #ff4b4b !important; color: white !important; }
     
-    .nync-loader {
+    /* CSS-ONLY STARTUP LOADER (Fades out automatically, never blocks Python) */
+    .startup-loader {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background-color: #000000; z-index: 9999998;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        animation: fadeOut 0.5s ease-out 1.3s forwards; 
+        pointer-events: none;
+    }
+    @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
+    
+    /* PYTHON CONTROLLED OVERLAY (For Background Syncing) */
+    .nync-fullscreen-overlay {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0;
         background-color: #000000; z-index: 9999999;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -42,13 +52,16 @@ st.markdown("""
         border-left-color: #ffffff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .nync-loader h3 { color: #888; font-weight: 400; margin: 0; font-family: sans-serif; }
+    .nync-fullscreen-overlay h3, .startup-loader h3 { color: #888; font-weight: 400; margin: 0; font-family: sans-serif; }
 </style>
 """, unsafe_allow_html=True)
 
+# NATIVE CSS LOADER (Masks initial React render jumpiness)
+st.markdown("<div class='startup-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
+
 # 2. BULLETPROOF STATE INITIALIZATION
 flags = [
-    "app_ready", "session", "user", "nav", "restore_attempted",
+    "session", "user", "nav",
     "pending_restore", "clear_cookies", "sync_cookies", "save_consent_val",
     "consent"
 ]
@@ -64,16 +77,7 @@ cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
 # =====================================================================
-# STEP 1: PRE-LOAD BARRIER 
-# =====================================================================
-if not st.session_state.app_ready:
-    st.markdown("<div class='nync-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
-    time.sleep(0.8)
-    st.session_state.app_ready = True
-    st.rerun()
-
-# =====================================================================
-# STEP 2: OAUTH CALLBACKS
+# STEP 1: OAUTH CALLBACKS (Catch Google/Outlook Logins immediately)
 # =====================================================================
 if "code" in st.query_params:
     code = st.query_params["code"]
@@ -102,18 +106,19 @@ if "code" in st.query_params:
         st.rerun()
 
 # =====================================================================
-# STEP 3: RESTORE SESSION
+# STEP 2: CHECK FOR EXISTING SESSION COOKIES TO RESTORE
 # =====================================================================
-if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.restore_attempted:
-    st.session_state.restore_attempted = True
-    if cookies.get("sb_access_token") and cookies.get("sb_refresh_token"):
+if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.pending_restore:
+    acc = cookies.get("sb_access_token")
+    ref = cookies.get("sb_refresh_token")
+    if acc and ref:
         st.session_state.pending_restore = True
-        st.rerun() 
+        st.rerun()
 
 # =====================================================================
-# STEP 4: TOKEN ROTATION CHECK
+# STEP 3: TOKEN ROTATION CHECK
 # =====================================================================
-if st.session_state.session and not st.session_state.clear_cookies:
+if st.session_state.session and not st.session_state.clear_cookies and not st.session_state.sync_cookies:
     mem_acc = st.session_state.session.access_token
     cook_acc = cookies.get("sb_access_token")
     if cook_acc and mem_acc != cook_acc:
@@ -121,7 +126,7 @@ if st.session_state.session and not st.session_state.clear_cookies:
         st.rerun()
 
 # =====================================================================
-# STEP 5: LOADER STATE MACHINE 
+# STEP 4: LOADER STATE MACHINE (Executes background actions safely)
 # =====================================================================
 is_loading = False
 load_msg = ""
@@ -136,11 +141,10 @@ elif st.session_state.save_consent_val:
     is_loading, load_msg = True, "Saving preferences..."
 
 if is_loading:
-    st.markdown(f"<div class='nync-loader'><div class='nync-spinner'></div><h3>{load_msg}</h3></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='nync-fullscreen-overlay'><div class='nync-spinner'></div><h3>{load_msg}</h3></div>", unsafe_allow_html=True)
     
     if st.session_state.pending_restore:
         st.session_state.pending_restore = False
-        
         acc = cookies.get("sb_access_token")
         ref = cookies.get("sb_refresh_token")
         
@@ -149,9 +153,9 @@ if is_loading:
             if session:
                 st.session_state.session = session
                 st.session_state.user = session.user
-                st.session_state.sync_cookies = True
+                st.session_state.sync_cookies = True # Resave in case Supabase gave a fresh token
             else:
-                st.session_state.clear_cookies = True
+                st.session_state.clear_cookies = True # Tokens invalid, wipe them
         else:
             st.session_state.clear_cookies = True
             
@@ -167,7 +171,7 @@ if is_loading:
         if "sb_refresh_token" in cookies:
             try: cookie_manager.delete("sb_refresh_token", key=f"del_ref_{t_key}")
             except: pass
-        time.sleep(1.0)
+        time.sleep(0.8)
         st.rerun()
 
     elif st.session_state.sync_cookies:
@@ -181,7 +185,7 @@ if is_loading:
             t_key = str(time.time()).replace(".", "")
             cookie_manager.set("sb_access_token", mem_acc, expires_at=expires, key=f"set_acc_{t_key}")
             cookie_manager.set("sb_refresh_token", mem_ref, expires_at=expires, key=f"set_ref_{t_key}")
-        time.sleep(1.0)
+        time.sleep(0.8)
         st.rerun()
 
     elif st.session_state.save_consent_val:
@@ -191,13 +195,13 @@ if is_loading:
         t_key = str(time.time()).replace(".", "")
         cookie_manager.set("nync_consent", val, expires_at=expires, key=f"set_cons_{t_key}")
         st.session_state.consent = val
-        time.sleep(1.0)
+        time.sleep(0.8)
         st.rerun()
         
-    st.stop()
+    st.stop() # Ensure the main app doesn't render while we are doing background tasks
 
 # =====================================================================
-# UI RENDERING
+# UI RENDERING (Only runs when fully loaded and idle)
 # =====================================================================
 
 if "stripe_session_id" in st.query_params and st.session_state.user:
@@ -224,6 +228,7 @@ cookie_consent.show(cookies)
 
 if not st.session_state.session:
     login.show()
+    # Catch manual logins immediately and jump to dashboard
     if st.session_state.session:
         st.session_state.sync_cookies = True
         st.rerun()
@@ -273,6 +278,7 @@ else:
         if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
 
     with c_user:
+        # LOGOUT PROCESS
         if st.button("Log Out", key="top_logout", use_container_width=True):
             auth.supabase.auth.sign_out()
             st.session_state.session = None
@@ -285,9 +291,6 @@ else:
     nav = st.session_state.nav
 
     if nav == "Dashboard":
-        # =======================================================
-        # NEW ONBOARDING WIZARD LOGIC
-        # =======================================================
         my_teams = auth.get_user_teams(st.session_state.user.id)
         has_cal = auth.check_calendar_connected(st.session_state.user.id)
         
@@ -295,7 +298,6 @@ else:
         if not my_teams or not has_cal:
             onboarding.show(st.session_state.user, auth.supabase, has_cal, bool(my_teams))
         else:
-            # Everything is set up! Render normal Dashboard.
             if 'active_team' not in st.session_state or st.session_state.active_team not in my_teams:
                 st.session_state.active_team = list(my_teams.keys())[0]
             
