@@ -2,11 +2,57 @@ import streamlit as st
 import auth_utils as auth
 import time
 
+@st.fragment
+def render_calendar_connections(user, supabase):
+    st.subheader("📅 Calendar Connections")
+    try:
+        o_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "outlook").execute()
+        outlook_connected = len(o_conn.data) > 0
+        o_date = o_conn.data[0]['created_at'][:10] if outlook_connected else ""
+
+        g_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "google").execute()
+        google_connected = len(g_conn.data) > 0
+        g_date = g_conn.data[0]['created_at'][:10] if google_connected else ""
+    except:
+        outlook_connected, google_connected = False, False
+
+    if outlook_connected:
+        st.success(f"✅ Outlook Connected (since {o_date})")
+        if st.button("Disconnect Outlook", key="disc_out"):
+            supabase.table("calendar_connections").delete().eq("user_id", user.id).eq("provider", "outlook").execute()
+            st.rerun(scope="fragment")
+    else:
+        ms_url = auth.get_microsoft_url(user.id)
+        st.link_button("🔌 Connect Outlook", ms_url, type="primary")
+
+    st.write("") 
+
+    if google_connected:
+        st.success(f"✅ Google Calendar Connected (since {g_date})")
+    else:
+        st.info("To connect Google Calendar, please Log Out and Log In again using the Google button.")
+
+@st.fragment
+def render_privacy_preferences():
+    st.subheader("🍪 Privacy Preferences")
+    current_consent = st.session_state.get('consent')
+    is_accepted = (current_consent == "accepted")
+    
+    with st.expander("Manage Cookie Consent", expanded=False):
+        with st.form("cookie_update_form"):
+            st.checkbox("Essential Cookies (Required)", value=True, disabled=True)
+            new_consent = st.checkbox("Analytics & Marketing Offers", value=is_accepted)
+            if st.form_submit_button("Save Preferences"):
+                st.session_state.save_consent_val = "accepted" if new_consent else "declined"
+                st.success("Preferences Saved!")
+                time.sleep(0.5)
+                st.rerun(scope="fragment")
+
 def show(user, supabase, cookie_manager):
     st.header("⚙️ Personal Settings")
     st.divider()
 
-    # 1. PROFILE SECTION
+    # 1. PROFILE SECTION (Full refresh required for billing)
     st.subheader("Profile")
     c1, c2 = st.columns([1, 2])
     with c1:
@@ -29,55 +75,13 @@ def show(user, supabase, cookie_manager):
 
     st.divider()
 
-    # 2. CALENDAR CONNECTIONS
-    st.subheader("📅 Calendar Connections")
-    try:
-        o_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "outlook").execute()
-        outlook_connected = len(o_conn.data) > 0
-        o_date = o_conn.data[0]['created_at'][:10] if outlook_connected else ""
-
-        g_conn = supabase.table("calendar_connections").select("id, created_at").eq("user_id", user.id).eq("provider", "google").execute()
-        google_connected = len(g_conn.data) > 0
-        g_date = g_conn.data[0]['created_at'][:10] if google_connected else ""
-    except:
-        outlook_connected, google_connected = False, False
-
-    if outlook_connected:
-        st.success(f"✅ Outlook Connected (since {o_date})")
-        if st.button("Disconnect Outlook"):
-            supabase.table("calendar_connections").delete().eq("user_id", user.id).eq("provider", "outlook").execute()
-            st.rerun()
-    else:
-        ms_url = auth.get_microsoft_url(user.id)
-        st.link_button("🔌 Connect Outlook", ms_url, type="primary")
-
-    st.write("") 
-
-    if google_connected:
-        st.success(f"✅ Google Calendar Connected (since {g_date})")
-    else:
-        st.info("To connect Google Calendar, please Log Out and Log In again using the Google button.")
-
+    # 2. RENDER FRAGMENTS (High-speed UI)
+    render_calendar_connections(user, supabase)
     st.divider()
-
-    # 3. PRIVACY & COOKIES
-    st.subheader("🍪 Privacy Preferences")
-    current_consent = st.session_state.get('consent')
-    is_accepted = (current_consent == "accepted")
-    
-    with st.expander("Manage Cookie Consent", expanded=False):
-        with st.form("cookie_update_form"):
-            st.checkbox("Essential Cookies (Required)", value=True, disabled=True)
-            new_consent = st.checkbox("Analytics & Marketing Offers", value=is_accepted)
-            if st.form_submit_button("Save Preferences"):
-                st.session_state.save_consent_val = "accepted" if new_consent else "declined"
-                st.success("Preferences Saved!")
-                time.sleep(0.5)
-                st.rerun()
-
+    render_privacy_preferences()
     st.divider()
     
-    # 4. DANGER ZONE
+    # 3. DANGER ZONE
     if st.checkbox("Show Danger Zone"):
         st.warning("These actions are irreversible.")
         if st.button("Delete My Account", type="primary"):
