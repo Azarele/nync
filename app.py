@@ -4,7 +4,6 @@ import base64
 import html
 import auth_utils as auth
 import extra_streamlit_components as stx
-# ADDED TEAM TO IMPORTS
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent, onboarding, team
 import datetime as dt
 
@@ -236,29 +235,33 @@ else:
     if tier == "FREE" and user_consent == "accepted":
         st.info("💡 **Tip:** Upgrade to **Squad Tier** to remove ads and unlock unlimited teams. [View Pricing](#)", icon="🚀")
 
-    # ADDED 'c_team' TO TOP NAVIGATION
-    c_logo, c_dash, c_team, c_set, c_price, c_guide, c_legal, c_spacer, c_user = st.columns([0.8, 1, 1, 1, 1, 1, 1, 1.5, 1.2], gap="small")
+    # =======================================================
+    # --- NEW: SEGMENTED CONTROL NAVIGATION ---
+    # =======================================================
+    c_logo, c_nav, c_user = st.columns([1, 7, 1.2], vertical_alignment="center")
     
     with c_logo:
         try:
             with open("nync_marketing.png", "rb") as f:
                 img_data = base64.b64encode(f.read()).decode()
-            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='80' style='margin-top:5px;cursor:pointer;'></a>", unsafe_allow_html=True)
+            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='80' style='cursor:pointer;'></a>", unsafe_allow_html=True)
         except:
             if st.button("⚡ Nync.", type="secondary"): st.session_state.nav = "Dashboard"; st.rerun()
 
-    with c_dash:
-        if st.button("Dashboard", use_container_width=True): st.session_state.nav = "Dashboard"
-    with c_team:
-        if st.button("Team", use_container_width=True): st.session_state.nav = "Team"
-    with c_set:
-        if st.button("Settings", use_container_width=True): st.session_state.nav = "Settings"
-    with c_price:
-        if st.button("Pricing", use_container_width=True): st.session_state.nav = "Pricing"
-    with c_guide:
-        if st.button("Guide", use_container_width=True): st.session_state.nav = "Guide"
-    with c_legal:
-        if st.button("Legal", use_container_width=True): st.session_state.nav = "Legal"
+    with c_nav:
+        tabs = ["Dashboard", "Team", "Settings", "Pricing", "Guide", "Legal"]
+        # Segmented Control gives a native tab feel
+        selected_tab = st.segmented_control(
+            "Navigation", 
+            options=tabs, 
+            default=st.session_state.nav, 
+            label_visibility="collapsed",
+            selection_mode="single"
+        )
+        # If the user clicks a new tab, update state and instantly render
+        if selected_tab and selected_tab != st.session_state.nav:
+            st.session_state.nav = selected_tab
+            st.rerun()
 
     with c_user:
         if st.button("Log Out", key="top_logout", use_container_width=True):
@@ -269,7 +272,7 @@ else:
             st.session_state.ignore_cookies = True 
             st.rerun()
     
-    st.markdown("<hr style='margin-top: 10px; border-color: #333;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin-top: 5px; border-color: #333;'>", unsafe_allow_html=True)
 
     nav = st.session_state.nav
 
