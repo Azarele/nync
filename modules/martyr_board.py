@@ -47,7 +47,6 @@ def show(supabase, team_id):
             st.markdown("#### 🏆 The Martyr Leaderboard")
             st.caption("Who has sacrificed the most sleep for the team?")
             
-            # --- MOBILE OPTIMIZATION: HTML FLEXBOX ---
             html_cards = "<div class='leaderboard-container'>"
             for i, stat in enumerate(stats[:4]):
                 email = stat['email'].split('@')[0]
@@ -58,25 +57,27 @@ def show(supabase, team_id):
                 elif i == 2: emoji, color, title = "🥉", "#b45309", "Bronze Burden"
                 else: emoji, color, title = "🎖️", "#52525b", "Team Player"
                     
+                # The Fix: We pushed the HTML to the absolute left margin so 
+                # the Markdown parser doesn't mistake it for a code block!
                 html_cards += f"""
-                <div class="martyr-card" style="border-top: 4px solid {color};">
-                    <div class="martyr-emoji">{emoji}</div>
-                    <div class="martyr-title" style="color: {color};">{title}</div>
-                    <div class="martyr-name">{email}</div>
-                    <div class="martyr-score">Total Pain: <span>{pain}</span></div>
-                </div>
-                """
+<div class="martyr-card" style="border-top: 4px solid {color};">
+<div class="martyr-emoji">{emoji}</div>
+<div class="martyr-title" style="color: {color};">{title}</div>
+<div class="martyr-name">{email}</div>
+<div class="martyr-score">Total Pain: <span>{pain}</span></div>
+</div>
+"""
             html_cards += "</div>"
             st.markdown(html_cards, unsafe_allow_html=True)
             
         else:
             with st.container(border=True):
                 st.markdown("""
-                <div style='text-align: center; padding: 40px; color: #71717a;'>
-                    <h1 style='font-size: 50px; margin-bottom: 10px; opacity: 0.5;'>🏆</h1>
-                    <h4 style='font-weight: 600;'>The Leaderboard is Empty</h4>
-                    <p style='font-size: 15px;'>No pain recorded yet. Propose a meeting to start the games.</p>
-                </div>
+<div style='text-align: center; padding: 40px; color: #71717a;'>
+<h1 style='font-size: 50px; margin-bottom: 10px; opacity: 0.5;'>🏆</h1>
+<h4 style='font-weight: 600;'>The Leaderboard is Empty</h4>
+<p style='font-size: 15px;'>No pain recorded yet. Propose a meeting to start the games.</p>
+</div>
                 """, unsafe_allow_html=True)
 
         st.divider()
