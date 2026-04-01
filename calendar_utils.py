@@ -25,7 +25,8 @@ def handle_microsoft_callback(code, user_id):
             "grant_type": "authorization_code",
             "client_secret": st.secrets["microsoft"]["client_secret"],
         }
-        r = requests.post(token_url, data=payload)
+        # Added 10s timeout to prevent hanging on login
+        r = requests.post(token_url, data=payload, timeout=10)
         tokens = r.json()
         
         if "access_token" not in tokens: return False
@@ -62,7 +63,7 @@ def refresh_outlook_token(user_id):
             "grant_type": "refresh_token",
             "scope": "Calendars.ReadWrite offline_access User.Read"
         }
-        r = requests.post(token_url, data=payload)
+        r = requests.post(token_url, data=payload, timeout=10)
         new_tokens = r.json()
         if "access_token" not in new_tokens: return None
             
@@ -86,14 +87,24 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
         end_str = end_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
         endpoint = f"https://graph.microsoft.com/v1.0/me/calendarview?startDateTime={start_str}&endDateTime={end_str}&$select=subject,start,end,showAs"
         
-        r = requests.get(endpoint, headers=headers)
-        if r.status_code == 401:
-            new_token = refresh_outlook_token(user_id)
-            if new_token:
-                headers["Authorization"] = f"Bearer {new_token}"
-                r = requests.get(endpoint, headers=headers)
-            else: return [] 
-        if r.status_code != 200: return []
+        try:
+            # 5 second strict timeout for fetching live data
+            r = requests.get(endpoint, headers=headers, timeout=5)
+            if r.status_code == 401:
+                new_token = refresh_outlook_token(user_id)
+                if new_token:
+                    headers["Authorization"] = f"Bearer {new_token}"
+                    r = requests.get(endpoint, headers=headers, timeout=5)
+                else: return [] 
+            if r.status_code != 200:
+                st.toast("⚠️ Could not sync live Outlook calendar, using cached availability.")
+                return []
+        except requests.exceptions.Timeout:
+            st.toast("⏱️ Outlook API timed out, using cached availability.")
+            return []
+        except Exception:
+            st.toast("⚠️ Could not sync live Outlook calendar, using cached availability.")
+            return []
         
         events = r.json().get('value', [])
         blocked_hours = []
@@ -127,9 +138,12 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
             "onlineMeetingProvider": "teamsForBusiness" 
         }
 
-        r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
+        # 10s timeout because writing to Microsoft Graph takes longer
+        r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload, timeout=10)
         return r.status_code in [201, 200]
-    except: return False
+    except Exception as e: 
+        print(f"Failed to book outlook meeting: {e}")
+        return False
 
 
 # --- GOOGLE AUTH ---
@@ -194,7 +208,7 @@ def refresh_google_token(user_id):
             "grant_type": "refresh_token"
         }
         
-        r = requests.post(token_url, data=payload)
+        r = requests.post(token_url, data=payload, timeout=10)
         new_tokens = r.json()
         
         if "access_token" not in new_tokens: return None
@@ -220,16 +234,26 @@ def fetch_google_events(user_id, start_dt, end_dt):
         url = f"https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin={start_str}&timeMax={end_str}&singleEvents=true"
         headers = {"Authorization": f"Bearer {token}"}
         
-        r = requests.get(url, headers=headers)
-        
-        if r.status_code == 401:
-            new_token = refresh_google_token(user_id)
-            if new_token:
-                headers = {"Authorization": f"Bearer {new_token}"}
-                r = requests.get(url, headers=headers)
-            else: return []
+        try:
+            # 5 second strict timeout
+            r = requests.get(url, headers=headers, timeout=5)
+            
+            if r.status_code == 401:
+                new_token = refresh_google_token(user_id)
+                if new_token:
+                    headers = {"Authorization": f"Bearer {new_token}"}
+                    r = requests.get(url, headers=headers, timeout=5)
+                else: return []
 
-        if r.status_code != 200: return []
+            if r.status_code != 200:
+                st.toast("⚠️ Could not sync live Google calendar, using cached availability.")
+                return []
+        except requests.exceptions.Timeout:
+            st.toast("⏱️ Google API timed out, using cached availability.")
+            return []
+        except Exception:
+            st.toast("⚠️ Could not sync live Google calendar, using cached availability.")
+            return []
         
         items = r.json().get('items', [])
         blocked_hours = []
@@ -275,7 +299,9 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         }
 
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1"
-        r = requests.post(url, headers=headers, json=payload)
+        
+        # 10s timeout to ensure event is fully created
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
         
         return r.status_code in [200, 201]
     except Exception as e: 

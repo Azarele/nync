@@ -127,7 +127,7 @@ if "code" in st.query_params:
             parts = state_param.split(":")
             if len(parts) > 1 and auth.handle_microsoft_callback(code, parts[1]):
                 st.toast("✅ Outlook Connected!")
-                st.session_state.nav = "Settings"
+                st.session_state.nav = "Dashboard"
         except: pass
         st.query_params.clear(); st.rerun()
     else:

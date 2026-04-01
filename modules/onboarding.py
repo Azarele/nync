@@ -10,24 +10,28 @@ def show(user, supabase, has_cal, has_teams):
     st.write("<br>", unsafe_allow_html=True)
 
     # ==========================================
-    # --- AUTO-DETECT TIMEZONE (THE MAGIC) ---
+    # --- AUTO-DETECT TIMEZONE SAFELY ---
     # ==========================================
     try:
         profile = auth.get_user_profile(user.id)
         current_tz = profile.get('default_timezone') if profile else None
         
-        # If they are a new user or stuck on the default UTC timezone...
         if not current_tz or current_tz == 'UTC':
-            # Run silent JS to pull their exact IANA Timezone (e.g., 'America/New_York')
             client_tz = st_javascript("Intl.DateTimeFormat().resolvedOptions().timeZone")
             
-            # st_javascript initially returns 0 while evaluating. Once it resolves:
             if client_tz and client_tz != 0 and client_tz != "0":
+                # Save to database
                 supabase.table('profiles').update({'default_timezone': client_tz}).eq('id', user.id).execute()
-                auth.get_user_profile.clear() # Clear cache so the app knows about the update
+                
+                # Safely clear the cache so the app pulls the new timezone
+                if hasattr(auth.get_user_profile, 'clear'):
+                    auth.get_user_profile.clear()
+                    
                 st.toast(f"🌍 Auto-detected your timezone: {client_tz}", icon="✅")
+                time.sleep(0.5)
+                st.rerun() # Immediately refresh to lock in the timezone and remove the JS evaluation
     except Exception as e:
-        pass # Fail silently so we don't block onboarding if the JS execution delays
+        pass # Fail silently so onboarding is never blocked
         
     # ==========================================
     # --- RENDER ONBOARDING STEPS ---
@@ -36,7 +40,8 @@ def show(user, supabase, has_cal, has_teams):
     
     with c2:
         with st.container(border=True):
-            # STEP 1: CALENDAR
+            
+            # --- STEP 1: CALENDAR ---
             if has_cal:
                 st.markdown("### ✅ 1. Calendar Synced")
                 st.caption("We have access to your busy slots.")
@@ -50,7 +55,7 @@ def show(user, supabase, has_cal, has_teams):
                 
             st.divider()
 
-            # STEP 2: TEAM
+            # --- STEP 2: TEAM ---
             if has_teams:
                 st.markdown("### ✅ 2. Team Joined")
                 st.caption("You are ready to schedule.")
@@ -84,9 +89,10 @@ def show(user, supabase, has_cal, has_teams):
                         else:
                             st.warning("Please enter a code.")
 
-        # Once both are completed, this button appears to drop them into the dashboard!
+        # Fail-safe button in case Streamlit doesn't automatically skip the page on the next rerun
         if has_cal and has_teams:
             st.write("<br>", unsafe_allow_html=True)
+            st.success("🎉 You are all set!")
             if st.button("🚀 Go to Dashboard", type="primary", use_container_width=True):
                 st.session_state.nav = "Dashboard"
                 st.rerun()

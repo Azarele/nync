@@ -3,8 +3,14 @@ import datetime as dt
 import pytz
 import pandas as pd
 import altair as alt
+import requests
+
+# ==========================================
+# --- 1. CORE LOGIC ENGINES ---
+# ==========================================
 
 def calculate_local_pain(target_date, hour, user_tz_str):
+    """Calculates exactly how painful a UTC hour is for a local timezone."""
     try:
         user_tz = pytz.timezone(user_tz_str)
         utc_time = dt.datetime.combine(target_date, dt.time(hour=hour)).replace(tzinfo=pytz.UTC)
@@ -22,6 +28,118 @@ def calculate_local_pain(target_date, hour, user_tz_str):
         return base_pain
     except: return 0
 
+@st.cache_data(ttl=600, show_spinner=False)
+def build_heatmap_dataframe(target_date, roster):
+    """Builds the visual heatmap data (Cached for speed)."""
+    data = []
+    utc_hours = list(range(24))
+    for h in utc_hours:
+        display_time = f"{h:02d}:00 UTC"
+        for member in roster:
+            name = member.get('name', 'Unknown')
+            tz = member.get('tz', 'UTC')
+            pain = calculate_local_pain(target_date, h, tz)
+            data.append({
+                "Time": display_time, "Hour": h, 
+                "Member": name, "Pain Score": pain, "Local Timezone": tz
+            })
+    return pd.DataFrame(data)
+
+@st.cache_data(ttl=600, show_spinner=False)
+def get_best_slots(roster, start_date, days=7):
+    """The Magic Algorithm: Scans the next 168 hours to find the 3 lowest-pain slots."""
+    best_slots = []
+    for day_offset in range(days):
+        current_date = start_date + dt.timedelta(days=day_offset)
+        for h in range(24):
+            total_pain = sum([calculate_local_pain(current_date, h, m.get('tz', 'UTC')) for m in roster])
+            best_slots.append({
+                'date': current_date,
+                'hour': h,
+                'time_str': f"{h:02d}:00 UTC",
+                'total_pain': total_pain
+            })
+            
+    # Sort first by lowest pain, then by date (sooner is better)
+    best_slots.sort(key=lambda x: (x['total_pain'], x['date']))
+    return best_slots[:3]
+
+def fire_webhook(supabase, team_id, target_date, chosen_time, total_pain):
+    """Fires a payload to Discord, Slack, or Teams."""
+    try:
+        t_data = supabase.table('teams').select('webhook_url, name').eq('id', team_id).single().execute()
+        webhook_url = t_data.data.get('webhook_url')
+        team_name = t_data.data.get('name', 'Your Team')
+        
+        if webhook_url:
+            url_lower = webhook_url.lower()
+            msg = f"🚨 **New Meeting Proposed for {team_name}** 🚨\n\n"
+            msg += f"🗓️ **Time:** {target_date.strftime('%B %d, %Y')} at {chosen_time}\n"
+            msg += f"🔥 **Total Team Pain:** {total_pain}\n\n"
+            msg += f"👉 **[Click here to vote on the Nync Pain Board!](https://nyncapp.streamlit.app)**"
+            
+            if "discord" in url_lower: payload = {"content": msg}
+            elif "slack" in url_lower: payload = {"text": msg}
+            else:
+                payload = {
+                    "@type": "MessageCard",
+                    "@context": "http://schema.org/extensions",
+                    "themeColor": "4f46e5",
+                    "summary": f"New Meeting for {team_name}",
+                    "text": msg.replace('\n', '\n\n')
+                }
+            requests.post(webhook_url, json=payload, timeout=3)
+    except Exception as e: print(f"Webhook failed: {e}")
+
+
+# ==========================================
+# --- 2. UI FRAGMENTS ---
+# ==========================================
+
+@st.fragment
+def render_magic_suggest(supabase, team_id, roster, target_date):
+    """Renders the AI auto-scheduler button and its resulting slots."""
+    
+    # Toggle state
+    if st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True):
+        st.session_state.show_magic = not st.session_state.get('show_magic', False)
+        st.rerun(scope="fragment")
+
+    if st.session_state.get('show_magic', False):
+        st.markdown("#### 🎯 Top 3 Suggested Slots (Next 7 Days)")
+        st.caption("The algorithm scanned the next 168 hours to find the absolute lowest timezone pain for your team.")
+        
+        with st.spinner("Crunching the math..."):
+            top_slots = get_best_slots(roster, target_date, days=7)
+            cols = st.columns(3)
+            
+            for i, slot in enumerate(top_slots):
+                with cols[i]:
+                    with st.container(border=True):
+                        st.markdown(f"**{slot['date'].strftime('%a, %b %d')}**")
+                        st.markdown(f"<h3 style='margin:0; padding:0; color:#4f46e5;'>{slot['time_str']}</h3>", unsafe_allow_html=True)
+                        st.caption(f"🔥 Team Pain: **{slot['total_pain']}**")
+                        
+                        if st.button("Propose", key=f"mag_prop_{i}", use_container_width=True):
+                            poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()
+                            if poll.data:
+                                poll_id = poll.data[0]['id']
+                                slot_dt = dt.datetime.combine(slot['date'], dt.time(hour=slot['hour'])).replace(tzinfo=dt.timezone.utc)
+                                supabase.table('poll_options').insert({
+                                    'poll_id': poll_id, 'slot_time': slot_dt.isoformat(), 'pain_score': int(slot['total_pain'])
+                                }).execute()
+                                
+                                st.success("✅ Poll Created! Check the Pain Board.")
+                                fire_webhook(supabase, team_id, slot['date'], slot['time_str'], slot['total_pain'])
+                                st.session_state.show_magic = False
+                                st.rerun(scope="fragment")
+        st.divider()
+
+
+# ==========================================
+# --- 3. MAIN DASHBOARD RENDERER ---
+# ==========================================
+
 def show(supabase, user, roster):
     st.markdown("### 🗺️ Team Availability Heatmap")
     st.caption("A visual grid of when your team is awake and working. **Swipe to scroll and tap a column to propose a meeting!**")
@@ -30,29 +148,21 @@ def show(supabase, user, roster):
         st.info("Head over to the Team tab to add members first.")
         return
 
-    target_date = st.date_input("Select Target Date", dt.date.today() + dt.timedelta(days=1))
+    team_id = st.session_state.get('active_team_id')
+
+    # Top Control Bar
+    c_mag, c_date = st.columns([1, 2], vertical_alignment="bottom")
+    with c_date:
+        target_date = st.date_input("Select Target Date", dt.date.today() + dt.timedelta(days=1))
     
-    with st.spinner("Analyzing Global Timezones..."):
-        data = []
-        utc_hours = list(range(24))
+    with c_mag:
+        render_magic_suggest(supabase, team_id, roster, target_date)
         
-        for h in utc_hours:
-            display_time = f"{h:02d}:00 UTC"
-            for member in roster:
-                name = member.get('name', 'Unknown')
-                tz = member.get('tz', 'UTC')
-                pain = calculate_local_pain(target_date, h, tz)
-                
-                data.append({
-                    "Time": display_time, "Hour": h, 
-                    "Member": name, "Pain Score": pain, "Local Timezone": tz
-                })
-                
-        df = pd.DataFrame(data)
+    # The Heatmap Layer
+    with st.spinner("Loading Availability..."):
+        df = build_heatmap_dataframe(target_date, roster)
         time_sel = alt.selection_point(fields=['Time'], name="TimeSelect")
 
-        # --- MOBILE OPTIMIZATION & FONT WEIGHT FIX ---
-        # Fixed: Changed fontWeight='bold' to labelFontWeight='bold'
         heatmap = alt.Chart(df).mark_rect(cornerRadius=6).encode(
             x=alt.X('Time:O', title='', sort=None, axis=alt.Axis(labelAngle=-45, labelPadding=10)),
             y=alt.Y('Member:N', title='', axis=alt.Axis(labelFontWeight='bold')), 
@@ -94,14 +204,15 @@ def show(supabase, user, roster):
                         st.caption(f"**Total Team Pain:** {total_pain} (Lower is better)")
                     with c2:
                         if st.button("🗳️ Propose as Poll", type="primary", use_container_width=True):
-                            team_id = st.session_state.get('active_team_id')
                             if team_id:
                                 poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()
                                 if poll.data:
                                     poll_id = poll.data[0]['id']
                                     slot_dt = dt.datetime.combine(target_date, dt.time(hour=chosen_hour)).replace(tzinfo=dt.timezone.utc)
                                     supabase.table('poll_options').insert({'poll_id': poll_id, 'slot_time': slot_dt.isoformat(), 'pain_score': int(total_pain)}).execute()
-                                    st.success(f"Poll created for {chosen_time}!")
+                                    
+                                    st.success(f"Poll created for {chosen_time}! Check the Pain Board.")
+                                    fire_webhook(supabase, team_id, target_date, chosen_time, total_pain)
                                     
         except Exception as e:
             st.altair_chart(heatmap, use_container_width=False)
