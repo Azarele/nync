@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 
+@st.fragment
 def show(poll_id, supabase):
     # --- 1. SECURITY CHECK ---
     # User must be logged in to vote
