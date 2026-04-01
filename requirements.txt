@@ -6,3 +6,4 @@ requests
 python-dateutil
 pytz
 openai
+streamlit-javascript==0.1.5
