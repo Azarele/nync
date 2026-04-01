@@ -47,7 +47,7 @@ def build_heatmap_dataframe(target_date, roster):
 
 @st.cache_data(ttl=600, show_spinner=False)
 def get_best_slots(roster, start_date, days=7):
-    """The Magic Algorithm: Scans the next 168 hours to find the 3 lowest-pain slots."""
+    """The Magic Algorithm: Scans hours to find the 3 lowest-pain slots."""
     best_slots = []
     for day_offset in range(days):
         current_date = start_date + dt.timedelta(days=day_offset)
@@ -106,11 +106,28 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
         st.rerun(scope="fragment")
 
     if st.session_state.get('show_magic', False):
-        st.markdown("#### 🎯 Top 3 Suggested Slots (Next 7 Days)")
-        st.caption("The algorithm scanned the next 168 hours to find the absolute lowest timezone pain for your team.")
+        st.markdown("#### 🎯 Top 3 Suggested Slots")
+        
+        # --- NEW: DATE SCOPE SELECTOR ---
+        scope = st.segmented_control(
+            "Search Scope", 
+            options=["Selected Date Only", "Next 7 Days"], 
+            default="Next 7 Days",
+            selection_mode="single",
+            label_visibility="collapsed"
+        )
+        
+        # Fallback to default if the user clears the selection
+        if not scope: scope = "Next 7 Days"
+        days_to_scan = 7 if scope == "Next 7 Days" else 1
+        
+        if days_to_scan == 7:
+            st.caption(f"Scanning the next **168 hours** starting from {target_date.strftime('%b %d')} to find the absolute lowest timezone pain.")
+        else:
+            st.caption(f"Scanning all **24 hours strictly on {target_date.strftime('%b %d')}** to find the best time for this specific day.")
         
         with st.spinner("Crunching the math..."):
-            top_slots = get_best_slots(roster, target_date, days=7)
+            top_slots = get_best_slots(roster, target_date, days=days_to_scan)
             cols = st.columns(3)
             
             for i, slot in enumerate(top_slots):
@@ -120,7 +137,7 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
                         st.markdown(f"<h3 style='margin:0; padding:0; color:#4f46e5;'>{slot['time_str']}</h3>", unsafe_allow_html=True)
                         st.caption(f"🔥 Team Pain: **{slot['total_pain']}**")
                         
-                        if st.button("Propose", key=f"mag_prop_{i}", use_container_width=True):
+                        if st.button("Propose", key=f"mag_prop_{i}_{days_to_scan}", use_container_width=True):
                             poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()
                             if poll.data:
                                 poll_id = poll.data[0]['id']
