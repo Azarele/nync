@@ -4,6 +4,7 @@ import pytz
 import pandas as pd
 import altair as alt
 import requests
+import calendar_utils as cal
 
 # ==========================================
 # --- 1. CORE LOGIC ENGINES ---
@@ -28,9 +29,44 @@ def calculate_local_pain(target_date, hour, user_tz_str):
         return base_pain
     except: return 0
 
+def fetch_all_conflicts(supabase, roster, start_date, days):
+    """Fetches live calendar events for the entire team and normalizes them."""
+    start_dt = dt.datetime.combine(start_date, dt.time.min) 
+    end_dt = start_dt + dt.timedelta(days=days)
+    
+    conflicts_dict = {}
+    for m in roster:
+        uid = m.get('user_id')
+        if not uid: continue
+        
+        res = supabase.table('calendar_connections').select('provider').eq('user_id', uid).execute()
+        providers = [r['provider'] for r in res.data] if res.data else []
+        
+        blocked_strs = set()
+        
+        # 1. Fetch Microsoft Graph Events
+        if 'outlook' in providers:
+            evts = cal.fetch_outlook_events(uid, start_dt, end_dt)
+            for e in evts:
+                # Force to naive UTC for safe matching
+                e_naive = e.astimezone(dt.timezone.utc).replace(tzinfo=None) if e.tzinfo else e
+                blocked_strs.add(e_naive.isoformat())
+                
+        # 2. Fetch Google Calendar Events
+        if 'google' in providers:
+            evts = cal.fetch_google_events(uid, start_dt, end_dt)
+            for e in evts:
+                e_naive = e.replace(tzinfo=None) if e.tzinfo else e
+                blocked_strs.add(e_naive.isoformat())
+        
+        if blocked_strs:
+            conflicts_dict[str(uid)] = list(blocked_strs)
+            
+    return conflicts_dict
+
 @st.cache_data(ttl=600, show_spinner=False)
 def build_heatmap_dataframe(target_date, roster):
-    """Builds the visual heatmap data (Cached for speed)."""
+    """Builds the visual heatmap data."""
     data = []
     utc_hours = list(range(24))
     for h in utc_hours:
@@ -46,18 +82,38 @@ def build_heatmap_dataframe(target_date, roster):
     return pd.DataFrame(data)
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_best_slots(roster, start_date, days=7):
+def get_best_slots(roster, start_date, days=7, conflicts_dict=None):
     """The Magic Algorithm: Scans hours to find the 3 lowest-pain slots."""
+    if conflicts_dict is None: conflicts_dict = {}
     best_slots = []
+    
     for day_offset in range(days):
         current_date = start_date + dt.timedelta(days=day_offset)
         for h in range(24):
-            total_pain = sum([calculate_local_pain(current_date, h, m.get('tz', 'UTC')) for m in roster])
+            slot_dt_naive = dt.datetime.combine(current_date, dt.time(hour=h))
+            slot_str = slot_dt_naive.isoformat()
+            
+            total_pain = 0
+            conflict_count = 0
+            
+            for m in roster:
+                pain = calculate_local_pain(current_date, h, m.get('tz', 'UTC'))
+                uid = m.get('user_id')
+                
+                # --- APPLY LIVE CALENDAR PENALTY ---
+                if uid and str(uid) in conflicts_dict:
+                    if slot_str in conflicts_dict[str(uid)]:
+                        pain += 25 # Massive penalty for overlapping an existing meeting!
+                        conflict_count += 1
+                        
+                total_pain += pain
+                
             best_slots.append({
                 'date': current_date,
                 'hour': h,
                 'time_str': f"{h:02d}:00 UTC",
-                'total_pain': total_pain
+                'total_pain': total_pain,
+                'conflicts': conflict_count
             })
             
     # Sort first by lowest pain, then by date (sooner is better)
@@ -99,8 +155,6 @@ def fire_webhook(supabase, team_id, target_date, chosen_time, total_pain):
 @st.fragment
 def render_magic_suggest(supabase, team_id, roster, target_date):
     """Renders the AI auto-scheduler button and its resulting slots."""
-    
-    # Toggle state
     if st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True):
         st.session_state.show_magic = not st.session_state.get('show_magic', False)
         st.rerun(scope="fragment")
@@ -108,7 +162,6 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
     if st.session_state.get('show_magic', False):
         st.markdown("#### 🎯 Top 3 Suggested Slots")
         
-        # --- NEW: DATE SCOPE SELECTOR ---
         scope = st.segmented_control(
             "Search Scope", 
             options=["Selected Date Only", "Next 7 Days"], 
@@ -117,17 +170,24 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
             label_visibility="collapsed"
         )
         
-        # Fallback to default if the user clears the selection
         if not scope: scope = "Next 7 Days"
         days_to_scan = 7 if scope == "Next 7 Days" else 1
         
-        if days_to_scan == 7:
-            st.caption(f"Scanning the next **168 hours** starting from {target_date.strftime('%b %d')} to find the absolute lowest timezone pain.")
-        else:
-            st.caption(f"Scanning all **24 hours strictly on {target_date.strftime('%b %d')}** to find the best time for this specific day.")
+        # --- THE LIVE CALENDAR TOGGLE ---
+        check_live = st.checkbox("🔄 Avoid Calendar Conflicts (Live Sync)", value=True, help="Pulls live Google/Outlook data for the whole team to ensure no overlaps. May take a few seconds.")
         
-        with st.spinner("Crunching the math..."):
-            top_slots = get_best_slots(roster, target_date, days=days_to_scan)
+        if days_to_scan == 7:
+            st.caption(f"Scanning **168 hours** starting from {target_date.strftime('%b %d')}.")
+        else:
+            st.caption(f"Scanning all **24 hours on {target_date.strftime('%b %d')}**.")
+        
+        with st.spinner("Crunching the math & syncing calendars..."):
+            
+            conflicts_dict = {}
+            if check_live:
+                conflicts_dict = fetch_all_conflicts(supabase, roster, target_date, days_to_scan)
+                
+            top_slots = get_best_slots(roster, target_date, days_to_scan, conflicts_dict)
             cols = st.columns(3)
             
             for i, slot in enumerate(top_slots):
@@ -135,7 +195,16 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
                     with st.container(border=True):
                         st.markdown(f"**{slot['date'].strftime('%a, %b %d')}**")
                         st.markdown(f"<h3 style='margin:0; padding:0; color:#4f46e5;'>{slot['time_str']}</h3>", unsafe_allow_html=True)
-                        st.caption(f"🔥 Team Pain: **{slot['total_pain']}**")
+                        
+                        # Display clear conflict warnings!
+                        if slot['conflicts'] > 0:
+                            st.error(f"⚠️ {slot['conflicts']} Overlap(s)")
+                        else:
+                            st.success("✅ Clear Calendars")
+                            
+                        # Base Pain Calculation (Removing the +25 conflict penalty for UI display)
+                        base_pain = slot['total_pain'] - (slot['conflicts'] * 25)
+                        st.caption(f"🔥 Base Pain: **{base_pain}**")
                         
                         if st.button("Propose", key=f"mag_prop_{i}_{days_to_scan}", use_container_width=True):
                             poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()
@@ -143,11 +212,11 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
                                 poll_id = poll.data[0]['id']
                                 slot_dt = dt.datetime.combine(slot['date'], dt.time(hour=slot['hour'])).replace(tzinfo=dt.timezone.utc)
                                 supabase.table('poll_options').insert({
-                                    'poll_id': poll_id, 'slot_time': slot_dt.isoformat(), 'pain_score': int(slot['total_pain'])
+                                    'poll_id': poll_id, 'slot_time': slot_dt.isoformat(), 'pain_score': int(base_pain)
                                 }).execute()
                                 
                                 st.success("✅ Poll Created! Check the Pain Board.")
-                                fire_webhook(supabase, team_id, slot['date'], slot['time_str'], slot['total_pain'])
+                                fire_webhook(supabase, team_id, slot['date'], slot['time_str'], base_pain)
                                 st.session_state.show_magic = False
                                 st.rerun(scope="fragment")
         st.divider()
@@ -167,7 +236,6 @@ def show(supabase, user, roster):
 
     team_id = st.session_state.get('active_team_id')
 
-    # Top Control Bar
     c_mag, c_date = st.columns([1, 2], vertical_alignment="bottom")
     with c_date:
         target_date = st.date_input("Select Target Date", dt.date.today() + dt.timedelta(days=1))
@@ -175,7 +243,6 @@ def show(supabase, user, roster):
     with c_mag:
         render_magic_suggest(supabase, team_id, roster, target_date)
         
-    # The Heatmap Layer
     with st.spinner("Loading Availability..."):
         df = build_heatmap_dataframe(target_date, roster)
         time_sel = alt.selection_point(fields=['Time'], name="TimeSelect")
