@@ -10,74 +10,110 @@ import datetime as dt
 # 1. SETUP
 try:
     st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
-except:
-    pass
+except: pass
 
+# --- GLOBAL PREMIUM CSS ---
 st.markdown("""
 <style>
-    .stApp { background-color: #000000; color: white; } 
-    [data-testid="stSidebar"] { display: none; }
-    [data-testid="stSidebarCollapsedControl"] { display: none; }
-    button[title="View fullscreen"], [data-testid="StyledFullScreenButton"], [data-testid="stImage"] button {
-        display: none !important; visibility: hidden !important; pointer-events: none !important;
+    /* Import Premium SaaS Font */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
     }
-    [data-testid="stHeaderAction"] { display: none !important; }
+    
+    /* Elegant Dark Mode Gradient */
+    .stApp { 
+        background: radial-gradient(circle at top center, #171723, #000000); 
+        color: #f4f4f5; 
+    } 
+    
+    /* Hide Streamlit Clutter */
+    [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
+    
+    /* Page Fade-In Animation */
+    @keyframes slideUpFade {
+        from { opacity: 0; transform: translateY(15px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    .main .block-container {
+        animation: slideUpFade 0.5s ease-out forwards;
+        padding-top: 2rem !important;
+        padding-bottom: 5rem !important;
+    }
+    
+    /* Beautiful Interactive Buttons */
     div.stButton > button {
-        background-color: transparent; color: #FFFFFF; border: 1px solid #FFFFFF;
-        border-radius: 4px; font-weight: 500; font-size: 14px; transition: all 0.2s ease;
-        padding: 6px 16px; height: auto; margin-top: 4px;
+        background-color: transparent; 
+        color: #FFFFFF; 
+        border: 1px solid rgba(255,255,255,0.2);
+        border-radius: 8px; 
+        font-weight: 600; 
+        font-size: 14px; 
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        padding: 8px 16px; 
+        height: auto; 
     }
-    div.stButton > button:hover { color: #000000; background-color: #FFFFFF; border-color: #FFFFFF; }
-    button[key="top_logout"] { color: #ff4b4b !important; border-color: #ff4b4b !important; }
-    button[key="top_logout"]:hover { background-color: #ff4b4b !important; color: white !important; }
-    
-    .startup-loader {
-        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-        background-color: #000000; z-index: 9999998;
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        animation: fadeOut 0.5s ease-out 1.3s forwards; 
-        pointer-events: none;
+    div.stButton > button:hover { 
+        transform: translateY(-2px);
+        background-color: #FFFFFF; 
+        color: #000000;
+        box-shadow: 0 6px 15px rgba(255,255,255,0.1);
     }
-    @keyframes fadeOut { to { opacity: 0; visibility: hidden; } }
     
+    /* Primary Action Buttons */
+    div.stButton > button[data-testid="baseButton-primary"] {
+        background-color: #4f46e5 !important;
+        border: none !important;
+        color: white !important;
+    }
+    div.stButton > button[data-testid="baseButton-primary"]:hover {
+        background-color: #6366f1 !important;
+        box-shadow: 0 6px 20px rgba(79, 70, 229, 0.4) !important;
+    }
+
+    button[key="top_logout"] { color: #ef4444 !important; border-color: rgba(239, 68, 68, 0.3) !important; }
+    button[key="top_logout"]:hover { background-color: #ef4444 !important; color: white !important; box-shadow: 0 6px 15px rgba(239, 68, 68, 0.3) !important;}
+    
+    /* Mobile Horizontal Scrolling Container for Heatmap */
+    .scrollable-chart {
+        width: 100%;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 15px;
+    }
+    .scrollable-chart::-webkit-scrollbar { height: 8px; }
+    .scrollable-chart::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); border-radius: 4px;}
+    .scrollable-chart::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 4px; }
+    
+    /* Python Controlled Overlay */
     .nync-fullscreen-overlay {
         position: fixed; top: 0; left: 0; right: 0; bottom: 0;
         background-color: #000000; z-index: 9999999;
         display: flex; flex-direction: column; align-items: center; justify-content: center;
+        backdrop-filter: blur(10px);
     }
     .nync-spinner {
-        width: 60px; height: 60px; border: 4px solid rgba(255, 255, 255, 0.1);
-        border-left-color: #ffffff; border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
+        width: 50px; height: 50px; border: 3px solid rgba(255, 255, 255, 0.1);
+        border-left-color: #6366f1; border-radius: 50%; animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite; margin-bottom: 20px;
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    .nync-fullscreen-overlay h3, .startup-loader h3 { color: #888; font-weight: 400; margin: 0; font-family: sans-serif; }
+    .nync-fullscreen-overlay h3 { color: #a1a1aa; font-weight: 500; font-size: 1.1rem; letter-spacing: 0.5px;}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<div class='startup-loader'><div class='nync-spinner'></div><h3>Loading Nync...</h3></div>", unsafe_allow_html=True)
-
 # 2. BULLETPROOF STATE INITIALIZATION
-flags = [
-    "session", "user", "nav",
-    "pending_restore", "clear_cookies", "sync_cookies", "save_consent_val",
-    "consent", "ignore_cookies"
-]
+flags = ["session", "user", "nav", "pending_restore", "clear_cookies", "sync_cookies", "save_consent_val", "consent", "ignore_cookies"]
 for f in flags:
-    if f not in st.session_state:
-        st.session_state[f] = None
+    if f not in st.session_state: st.session_state[f] = None
         
-if not st.session_state.nav: 
-    st.session_state.nav = "Dashboard"
-if st.session_state.ignore_cookies is None:
-    st.session_state.ignore_cookies = False
+if not st.session_state.nav: st.session_state.nav = "Dashboard"
+if st.session_state.ignore_cookies is None: st.session_state.ignore_cookies = False
 
-# 3. INIT COOKIE MANAGER
 cookie_manager = stx.CookieManager(key="cm")
 cookies = cookie_manager.get_all(key="init") or {}
 
-if "invite" in st.query_params: 
-    st.session_state.pending_invite = st.query_params["invite"]
-
+if "invite" in st.query_params: st.session_state.pending_invite = st.query_params["invite"]
 if "vote" in st.query_params and not st.session_state.session:
     st.session_state.pending_vote_id = st.query_params["vote"]
     if "idx" in st.query_params: st.session_state.pending_vote_idx = st.query_params["idx"]
@@ -93,8 +129,7 @@ if "code" in st.query_params:
                 st.toast("✅ Outlook Connected!")
                 st.session_state.nav = "Settings"
         except: pass
-        st.query_params.clear()
-        st.rerun()
+        st.query_params.clear(); st.rerun()
     else:
         try:
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
@@ -104,28 +139,19 @@ if "code" in st.query_params:
                 auth.save_google_token(res.user.id, res.session)
                 st.session_state.sync_cookies = True 
                 st.session_state.ignore_cookies = False
-        except:
-            st.error("Login Failed.")
-        st.query_params.clear()
-        st.rerun()
+        except: st.error("Login Failed.")
+        st.query_params.clear(); st.rerun()
 
 if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.pending_restore and not st.session_state.ignore_cookies:
-    acc = cookies.get("sb_access_token")
-    ref = cookies.get("sb_refresh_token")
-    if acc and ref:
-        st.session_state.pending_restore = True
-        st.rerun()
+    if cookies.get("sb_access_token") and cookies.get("sb_refresh_token"):
+        st.session_state.pending_restore = True; st.rerun()
 
 if st.session_state.session and not st.session_state.clear_cookies and not st.session_state.sync_cookies:
-    mem_acc = st.session_state.session.access_token
-    cook_acc = cookies.get("sb_access_token")
-    if cook_acc and mem_acc != cook_acc:
-        st.session_state.sync_cookies = True
-        st.rerun()
+    if cookies.get("sb_access_token") and st.session_state.session.access_token != cookies.get("sb_access_token"):
+        st.session_state.sync_cookies = True; st.rerun()
 
 is_loading = False
 load_msg = ""
-
 if st.session_state.pending_restore: is_loading, load_msg = True, "Restoring session..."
 elif st.session_state.clear_cookies: is_loading, load_msg = True, "Logging out safely..."
 elif st.session_state.sync_cookies: is_loading, load_msg = True, "Securing session..."
@@ -133,47 +159,29 @@ elif st.session_state.save_consent_val: is_loading, load_msg = True, "Saving pre
 
 if is_loading:
     st.markdown(f"<div class='nync-fullscreen-overlay'><div class='nync-spinner'></div><h3>{load_msg}</h3></div>", unsafe_allow_html=True)
-    
     if st.session_state.pending_restore:
         st.session_state.pending_restore = False
-        acc = cookies.get("sb_access_token")
-        ref = cookies.get("sb_refresh_token")
+        acc, ref = cookies.get("sb_access_token"), cookies.get("sb_refresh_token")
         if acc and ref:
             session = auth.restore_session(acc, ref)
-            if session:
-                st.session_state.session = session
-                st.session_state.user = session.user
-                st.session_state.sync_cookies = True 
+            if session: st.session_state.session, st.session_state.user, st.session_state.sync_cookies = session, session.user, True 
             else: st.session_state.clear_cookies = True 
         else: st.session_state.clear_cookies = True
-        time.sleep(0.5)
-        st.rerun()
-        
+        time.sleep(0.5); st.rerun()
     elif st.session_state.clear_cookies:
         st.session_state.clear_cookies = False
         t_key = str(time.time()).replace(".", "")
-        if "sb_access_token" in cookies:
-            try: cookie_manager.delete("sb_access_token", key=f"del_acc_{t_key}")
-            except: pass
-        if "sb_refresh_token" in cookies:
-            try: cookie_manager.delete("sb_refresh_token", key=f"del_ref_{t_key}")
-            except: pass
-        time.sleep(0.8)
-        st.rerun()
-
+        try: cookie_manager.delete("sb_access_token", key=f"del_acc_{t_key}"); cookie_manager.delete("sb_refresh_token", key=f"del_ref_{t_key}")
+        except: pass
+        time.sleep(0.8); st.rerun()
     elif st.session_state.sync_cookies:
         st.session_state.sync_cookies = False
         if st.session_state.session:
-            mem_acc = st.session_state.session.access_token
-            mem_ref = st.session_state.session.refresh_token
-            remember = st.session_state.get("remember_me", True)
-            expires = dt.datetime.now() + dt.timedelta(days=30) if remember else None
+            expires = dt.datetime.now() + dt.timedelta(days=30)
             t_key = str(time.time()).replace(".", "")
-            cookie_manager.set("sb_access_token", mem_acc, expires_at=expires, key=f"set_acc_{t_key}")
-            cookie_manager.set("sb_refresh_token", mem_ref, expires_at=expires, key=f"set_ref_{t_key}")
-        time.sleep(0.8)
-        st.rerun()
-
+            cookie_manager.set("sb_access_token", st.session_state.session.access_token, expires_at=expires, key=f"set_acc_{t_key}")
+            cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key=f"set_ref_{t_key}")
+        time.sleep(0.8); st.rerun()
     elif st.session_state.save_consent_val:
         val = st.session_state.save_consent_val
         st.session_state.save_consent_val = None
@@ -181,15 +189,12 @@ if is_loading:
         t_key = str(time.time()).replace(".", "")
         cookie_manager.set("nync_consent", val, expires_at=expires, key=f"set_cons_{t_key}")
         st.session_state.consent = val
-        time.sleep(0.8)
-        st.rerun()
-        
+        time.sleep(0.8); st.rerun()
     st.stop()
 
 # =====================================================================
 # UI RENDERING
 # =====================================================================
-
 if "stripe_session_id" in st.query_params and st.session_state.user:
     price_id = auth.verify_stripe_payment(st.query_params["stripe_session_id"])
     if price_id:
@@ -200,33 +205,23 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
         auth.upgrade_user_tier(st.session_state.user.id, new_tier)
         st.toast("🎉 Plan Updated!")
         time.sleep(2)
-    st.query_params.clear()
-    st.rerun()
+    st.query_params.clear(); st.rerun()
 
 cookie_consent.show(cookies)
 
 if not st.session_state.session:
     login.show()
-    if st.session_state.session:
-        st.session_state.sync_cookies = True
-        st.session_state.ignore_cookies = False 
-        st.rerun()
+    if st.session_state.session: st.session_state.sync_cookies = True; st.session_state.ignore_cookies = False; st.rerun()
 else:
     if 'pending_invite' in st.session_state:
         code = st.session_state.pending_invite
-        if auth.join_team_by_code(st.session_state.user.id, code):
-            st.toast(f"✅ Joined Team!")
-        else:
-            st.toast("❌ Invalid Invite Code")
+        if auth.join_team_by_code(st.session_state.user.id, code): st.toast(f"✅ Joined Team!")
+        else: st.toast("❌ Invalid Invite Code")
         del st.session_state.pending_invite
-        if "invite" in st.query_params:
-            st.query_params.clear()
-        time.sleep(1)
-        st.rerun()
+        if "invite" in st.query_params: st.query_params.clear()
+        time.sleep(1); st.rerun()
 
-    if "vote" in st.query_params:
-        vote.show(st.query_params["vote"], auth.supabase)
-        st.stop()
+    if "vote" in st.query_params: vote.show(st.query_params["vote"], auth.supabase); st.stop()
         
     user_consent = st.session_state.get('consent')
     profile = auth.get_user_profile(st.session_state.user.id)
@@ -235,30 +230,18 @@ else:
     if tier == "FREE" and user_consent == "accepted":
         st.info("💡 **Tip:** Upgrade to **Squad Tier** to remove ads and unlock unlimited teams. [View Pricing](#)", icon="🚀")
 
-    # =======================================================
-    # --- NEW: SEGMENTED CONTROL NAVIGATION ---
-    # =======================================================
     c_logo, c_nav, c_user = st.columns([1, 7, 1.2], vertical_alignment="center")
     
     with c_logo:
         try:
-            with open("nync_marketing.png", "rb") as f:
-                img_data = base64.b64encode(f.read()).decode()
+            with open("nync_marketing.png", "rb") as f: img_data = base64.b64encode(f.read()).decode()
             st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='80' style='cursor:pointer;'></a>", unsafe_allow_html=True)
         except:
             if st.button("⚡ Nync.", type="secondary"): st.session_state.nav = "Dashboard"; st.rerun()
 
     with c_nav:
         tabs = ["Dashboard", "Team", "Settings", "Pricing", "Guide", "Legal"]
-        # Segmented Control gives a native tab feel
-        selected_tab = st.segmented_control(
-            "Navigation", 
-            options=tabs, 
-            default=st.session_state.nav, 
-            label_visibility="collapsed",
-            selection_mode="single"
-        )
-        # If the user clicks a new tab, update state and instantly render
+        selected_tab = st.segmented_control("Navigation", options=tabs, default=st.session_state.nav, label_visibility="collapsed", selection_mode="single")
         if selected_tab and selected_tab != st.session_state.nav:
             st.session_state.nav = selected_tab
             st.rerun()
@@ -272,7 +255,7 @@ else:
             st.session_state.ignore_cookies = True 
             st.rerun()
     
-    st.markdown("<hr style='margin-top: 5px; border-color: #333;'>", unsafe_allow_html=True)
+    st.markdown("<hr style='margin-top: 5px; border-color: rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
 
     nav = st.session_state.nav
 
@@ -280,8 +263,7 @@ else:
         my_teams = auth.get_user_teams(st.session_state.user.id)
         has_cal = auth.check_calendar_connected(st.session_state.user.id)
         
-        if not my_teams or not has_cal:
-            onboarding.show(st.session_state.user, auth.supabase, has_cal, bool(my_teams))
+        if not my_teams or not has_cal: onboarding.show(st.session_state.user, auth.supabase, has_cal, bool(my_teams))
         else:
             if 'active_team' not in st.session_state or st.session_state.active_team not in my_teams:
                 st.session_state.active_team = list(my_teams.keys())[0]
@@ -290,29 +272,29 @@ else:
             status = auth.check_team_status(st.session_state.active_team_id)
             
             tier_color = "#666" 
-            if tier == "SQUAD": tier_color = "#ff8c00"
-            if tier == "GUILD": tier_color = "#1e90ff"
-            if tier == "EMPIRE": tier_color = "#9932cc"
+            if tier == "SQUAD": tier_color = "#f59e0b"
+            if tier == "GUILD": tier_color = "#3b82f6"
+            if tier == "EMPIRE": tier_color = "#8b5cf6"
 
             safe_team = html.escape(st.session_state.active_team)
-            badge_html = f"<span style='background-color:{tier_color}; color:white; padding:2px 8px; border-radius:4px; font-size:12px; vertical-align:middle; margin-left:10px;'>{tier}</span>"
+            badge_html = f"<span style='background-color:{tier_color}; color:white; padding:3px 10px; border-radius:12px; font-size:11px; font-weight:700; letter-spacing:0.5px; vertical-align:middle; margin-left:10px;'>{tier}</span>"
 
             if len(my_teams) > 1:
                 c1, c2 = st.columns([3, 1])
-                c1.markdown(f"### {safe_team} {badge_html}", unsafe_allow_html=True)
+                c1.markdown(f"<h3 style='margin-bottom:20px;'>{safe_team} {badge_html}</h3>", unsafe_allow_html=True)
                 new = c2.selectbox("Switch Team", list(my_teams.keys()), label_visibility="collapsed")
                 if new != st.session_state.active_team:
                     st.session_state.active_team = new
                     st.rerun()
             else:
-                st.markdown(f"### {safe_team} {badge_html}", unsafe_allow_html=True)
+                st.markdown(f"<h3 style='margin-bottom:20px;'>{safe_team} {badge_html}</h3>", unsafe_allow_html=True)
 
             if status == 'locked':
                 st.error("Team Locked (Trial Expired)")
-                if st.button("Upgrade"): st.session_state.nav = "Pricing"; st.rerun()
+                if st.button("Upgrade", type="primary"): st.session_state.nav = "Pricing"; st.rerun()
             else:
                 roster = auth.get_team_roster(st.session_state.active_team_id)
-                t1, t2 = st.tabs(["Pain Board", "Scheduler (Heatmap)"])
+                t1, t2 = st.tabs(["🪧 Pain Board", "🗓️ Scheduler (Heatmap)"])
                 with t1: martyr_board.show(auth.supabase, st.session_state.active_team_id)
                 with t2: scheduler.show(auth.supabase, st.session_state.user, roster)
                 
