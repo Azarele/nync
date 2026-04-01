@@ -51,15 +51,15 @@ def show(supabase, user, roster):
         df = pd.DataFrame(data)
         time_sel = alt.selection_point(fields=['Time'], name="TimeSelect")
 
-        # --- MOBILE OPTIMIZATION ---
-        # We explicitly set width=1000 to force horizontal scrolling on phones
+        # --- MOBILE OPTIMIZATION & FONT WEIGHT FIX ---
+        # Fixed: Changed fontWeight='bold' to labelFontWeight='bold'
         heatmap = alt.Chart(df).mark_rect(cornerRadius=6).encode(
             x=alt.X('Time:O', title='', sort=None, axis=alt.Axis(labelAngle=-45, labelPadding=10)),
-            y=alt.Y('Member:N', title='', axis=alt.Axis(fontWeight='bold')),
+            y=alt.Y('Member:N', title='', axis=alt.Axis(labelFontWeight='bold')), 
             color=alt.Color('Pain Score:Q', scale=alt.Scale(
                 domain=[0, 3, 5, 10], 
-                range=['#10b981', '#f59e0b', '#f97316', '#ef4444'] # Modern SaaS Colors
-            ), legend=None), # Hide legend to save mobile space
+                range=['#10b981', '#f59e0b', '#f97316', '#ef4444']
+            ), legend=None), 
             opacity=alt.condition(time_sel, alt.value(1.0), alt.value(0.3)),
             tooltip=[
                 alt.Tooltip('Member:N', title='Name'),
@@ -69,13 +69,12 @@ def show(supabase, user, roster):
             ]
         ).add_params(time_sel).properties(
             height=120 + (len(roster) * 45),
-            width=1000 # Forces wide layout
+            width=1000 
         ).configure_axis(
             labelFontSize=13, titleFontSize=14, grid=False, domain=False, tickSize=0
         ).configure_view(strokeWidth=0)
 
         try:
-            # Wrap in a custom CSS div for smoother iOS elastic scrolling
             st.markdown('<div class="scrollable-chart">', unsafe_allow_html=True)
             event = st.altair_chart(heatmap, use_container_width=False, on_select="rerun")
             st.markdown('</div>', unsafe_allow_html=True)
