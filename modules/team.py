@@ -5,13 +5,26 @@ import pytz
 
 # --- FRAGMENT 1: The Team Roster ---
 @st.fragment
-def render_roster(user, supabase, selected_tid, my_role):
+def render_roster(user, supabase, selected_tid, my_role, current_tier):
     with st.expander("👥 Team Roster & Timezones", expanded=True):
         try:
             roster_data = supabase.table('team_members').select('id, user_id, role, ghost_name, ghost_email, ghost_timezone, profiles(email, default_timezone)').eq('team_id', selected_tid).execute()
             
             if roster_data.data:
                 ALL_TZS = pytz.all_timezones
+                current_members = len(roster_data.data)
+                
+                # --- BILLING: ENFORCE MEMBER LIMITS ---
+                MAX_MEMBERS = 5 if current_tier == 'free' else (10 if current_tier == 'squad' else (50 if current_tier == 'guild' else 9999))
+                
+                if current_members >= MAX_MEMBERS:
+                    st.error(f"**Limit Reached.** Your {current_tier.upper()} plan allows {MAX_MEMBERS} members per team.")
+                    if st.button("🚀 Upgrade Plan", key=f"upg_mem_{selected_tid}", type="primary"):
+                        st.session_state.nav = "Pricing"
+                        st.rerun()
+                else:
+                    st.caption(f"Team Capacity: {current_members} / {MAX_MEMBERS}")
+                st.write("")
                 
                 for member in roster_data.data:
                     row_id = member.get('id')
@@ -46,7 +59,7 @@ def render_roster(user, supabase, selected_tid, my_role):
                                 if auth.remove_team_member_by_row(row_id, selected_tid, user.id):
                                     st.toast(f"Removed member.")
                                     time.sleep(0.5)
-                                    st.rerun(scope="fragment") # <--- FRAGMENT RERUN
+                                    st.rerun(scope="fragment") 
                     else:
                         c2.write(f"🌍 {m_tz}")
                 
@@ -69,28 +82,29 @@ def render_roster(user, supabase, selected_tid, my_role):
                         if changes_made:
                             st.success("Timezones updated successfully!")
                             time.sleep(0.5)
-                            st.rerun(scope="fragment") # <--- FRAGMENT RERUN
+                            st.rerun(scope="fragment") 
                         else:
                             st.info("No changes to save.")
-                        
-                if my_role == 'admin':
-                    st.markdown("---")
-                    st.markdown("##### ➕ Add Dummy Member")
-                    with st.form(f"add_ghost_{selected_tid}", clear_on_submit=True):
-                        col1, col2, col3 = st.columns([2, 2, 3])
-                        g_name = col1.text_input("Name", placeholder="John Doe")
-                        g_email = col2.text_input("Email", placeholder="(Optional)")
-                        default_tz_index = ALL_TZS.index("UTC") if "UTC" in ALL_TZS else 0
-                        g_tz = col3.selectbox("Timezone", ALL_TZS, index=default_tz_index)
-                        
-                        if st.form_submit_button("Add Dummy"):
-                            if g_name:
-                                auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
-                                st.success("Dummy added!")
-                                time.sleep(0.5)
-                                st.rerun(scope="fragment") # <--- FRAGMENT RERUN
-                            else:
-                                st.warning("Name is required.")
+                    
+                    # Only allow adding ghost members if under the limit
+                    if current_members < MAX_MEMBERS:
+                        st.markdown("---")
+                        st.markdown("##### ➕ Add Dummy Member")
+                        with st.form(f"add_ghost_{selected_tid}", clear_on_submit=True):
+                            col1, col2, col3 = st.columns([2, 2, 3])
+                            g_name = col1.text_input("Name", placeholder="John Doe")
+                            g_email = col2.text_input("Email", placeholder="(Optional)")
+                            default_tz_index = ALL_TZS.index("UTC") if "UTC" in ALL_TZS else 0
+                            g_tz = col3.selectbox("Timezone", ALL_TZS, index=default_tz_index)
+                            
+                            if st.form_submit_button("Add Dummy"):
+                                if g_name:
+                                    auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
+                                    st.success("Dummy added!")
+                                    time.sleep(0.5)
+                                    st.rerun(scope="fragment") 
+                                else:
+                                    st.warning("Name is required.")
         except Exception as e:
             st.error(f"Could not load roster: {e}")
 
@@ -103,21 +117,34 @@ def render_webhooks(supabase, selected_tid, webhook):
             supabase.table('teams').update({'webhook_url': new_hook}).eq('id', selected_tid).execute()
             st.success("Saved!")
 
-
 def show(user, supabase):
     st.header("🛡️ Team Headquarters")
     st.divider()
+
+    # Look up billing tier once
+    profile = auth.get_user_profile(user.id)
+    tier = profile.get('subscription_tier', 'free').lower() if profile else 'free'
+    MAX_TEAMS = 1 if tier in ['free', 'squad'] else 999
+    
+    my_teams = auth.get_user_teams(user.id)
 
     # 1. CREATE OR JOIN TEAM
     c_create, c_join = st.columns(2)
     with c_create:
         with st.expander("➕ Create a New Team"):
-            new_team_name = st.text_input("Team Name")
-            if st.button("Create Team", use_container_width=True):
-                if auth.create_team(user.id, new_team_name):
-                    st.success(f"Team '{new_team_name}' created!")
-                    time.sleep(0.5)
-                    st.rerun() # Full rerun required to update the "Select Team" dropdown globally
+            # --- BILLING: ENFORCE TEAM LIMITS ---
+            if my_teams and len(my_teams) >= MAX_TEAMS:
+                st.error(f"**Limit Reached.** Your {tier.upper()} plan allows {MAX_TEAMS} team(s).")
+                if st.button("🚀 Upgrade to Guild", key="upg_team", type="primary"):
+                    st.session_state.nav = "Pricing"
+                    st.rerun()
+            else:
+                new_team_name = st.text_input("Team Name")
+                if st.button("Create Team", use_container_width=True):
+                    if auth.create_team(user.id, new_team_name):
+                        st.success(f"Team '{new_team_name}' created!")
+                        time.sleep(0.5)
+                        st.rerun() 
 
     with c_join:
         with st.expander("🤝 Join a Team"):
@@ -126,15 +153,13 @@ def show(user, supabase):
                 if auth.join_team_by_code(user.id, code):
                     st.success("Joined team successfully!")
                     time.sleep(0.5)
-                    st.rerun() # Full rerun required
+                    st.rerun() 
                 else:
                     st.error("Invalid code.")
 
     st.write("<br>", unsafe_allow_html=True)
 
     # 2. MANAGE EXISTING TEAMS
-    my_teams = auth.get_user_teams(user.id)
-    
     if not my_teams:
         st.info("👈 Create or Join a team above to get started.")
         return
@@ -162,16 +187,28 @@ def show(user, supabase):
     c_code, c_settings = st.columns([1, 2])
     
     with c_code:
-        st.caption("Invite Code")
-        st.code(invite_code, language=None)
+        # Hide the invite code entirely if they are over the member limit!
+        try:
+            roster_check = supabase.table('team_members').select('id', count='exact').eq('team_id', selected_tid).execute()
+            current_members = roster_check.count
+        except:
+            current_members = 0
+            
+        MAX_MEMBERS = 5 if tier == 'free' else (10 if tier == 'squad' else (50 if tier == 'guild' else 9999))
         
-        st.caption("Invite Link")
-        invite_link = f"https://nyncapp.streamlit.app/?invite={invite_code}"
-        st.code(invite_link, language=None)
+        if current_members >= MAX_MEMBERS:
+            st.error(f"**Member Limit Reached ({MAX_MEMBERS}).**\nUpgrade your plan to invite more people.")
+        else:
+            st.caption("Invite Code")
+            st.code(invite_code, language=None)
+            
+            st.caption("Invite Link")
+            invite_link = f"https://nyncapp.streamlit.app/?invite={invite_code}"
+            st.code(invite_link, language=None)
         
     with c_settings:
-        # Load our hyper-fast fragments!
-        render_roster(user, supabase, selected_tid, my_role)
+        # Load our hyper-fast fragments, passing the tier down to enforce limits!
+        render_roster(user, supabase, selected_tid, my_role, tier)
         
         if my_role == 'admin':
             render_webhooks(supabase, selected_tid, webhook)
@@ -181,4 +218,4 @@ def show(user, supabase):
             if auth.leave_team(selected_tid, user.id):
                 st.toast("You have left the team.")
                 time.sleep(0.5)
-                st.rerun() # Full rerun required because leaving a team changes the global dropdown
+                st.rerun()

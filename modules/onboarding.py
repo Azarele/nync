@@ -66,15 +66,27 @@ def show(user, supabase, has_cal, has_teams):
                 t_create, t_join = st.tabs(["Create Team", "Join Team"])
                 
                 with t_create:
-                    new_team_name = st.text_input("Team Name", placeholder="e.g. Engineering Squad")
-                    if st.button("Create Team", use_container_width=True):
-                        if new_team_name:
-                            if auth.create_team(user.id, new_team_name):
-                                st.success("Team created!")
-                                time.sleep(0.5)
-                                st.rerun()
-                        else:
-                            st.warning("Please enter a name.")
+                    # Look up their tier and limits instantly
+                    profile = auth.get_user_profile(user.id)
+                    tier = profile.get('subscription_tier', 'free').lower() if profile else 'free'
+                    MAX_TEAMS = 1 if tier in ['free', 'squad'] else 999
+                    my_teams = auth.get_user_teams(user.id)
+                    
+                    if my_teams and len(my_teams) >= MAX_TEAMS:
+                        st.error(f"**Limit Reached.** Your {tier.upper()} plan is limited to {MAX_TEAMS} team.")
+                        if st.button("🚀 Upgrade Plan", type="primary", use_container_width=True):
+                            st.session_state.nav = "Pricing"
+                            st.rerun()
+                    else:
+                        new_team_name = st.text_input("Team Name", placeholder="e.g. Engineering Squad")
+                        if st.button("Create Team", use_container_width=True):
+                            if new_team_name:
+                                if auth.create_team(user.id, new_team_name):
+                                    st.success("Team created!")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                            else:
+                                st.warning("Please enter a name.")
                             
                 with t_join:
                     code = st.text_input("Invite Code", placeholder="NYNC-XXXX")
