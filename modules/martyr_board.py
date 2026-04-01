@@ -1,6 +1,8 @@
 import streamlit as st
 import auth_utils as auth
 import datetime as dt
+import time
+from modules.scheduler import calculate_local_pain
 
 @st.fragment 
 def show(supabase, team_id):
@@ -13,7 +15,6 @@ def show(supabase, team_id):
     try:
         stats = auth.get_martyr_stats(team_id)
         
-        # 1. Safely wrapped CSS to prevent indentation breaks
         css_styles = (
             "<style>"
             ".leaderboard-container { display: flex; flex-wrap: wrap; gap: 15px; justify-content: center; margin-bottom: 20px; }"
@@ -36,7 +37,6 @@ def show(supabase, team_id):
             st.markdown("#### 🏆 The Martyr Leaderboard")
             st.caption("Who has sacrificed the most sleep for the team?")
             
-            # 2. Rebuilt line-by-line so your IDE cannot break the formatting!
             html_cards = "<div class='leaderboard-container'>"
             
             for i, stat in enumerate(stats[:4]):
@@ -57,7 +57,6 @@ def show(supabase, team_id):
                 
             html_cards += "</div>"
             
-            # 3. st.html() forces native rendering instead of markdown code blocks
             try:
                 st.html(html_cards)
             except AttributeError:
@@ -90,8 +89,59 @@ def show(supabase, team_id):
             with st.container(border=True):
                 c1, c2 = st.columns([3, 1])
                 c1.markdown(f"**Poll Created:** {p['created_at'][:10]}")
-                if c2.button("Close Poll", key=f"close_{p['id']}", type="secondary", use_container_width=True):
+                
+                # --- BOOKING LOGIC ---
+                if c2.button("📅 Book Meeting", key=f"close_{p['id']}", type="primary", use_container_width=True):
+                    options = p.get('poll_options', [])
+                    if options:
+                        winning_opt = max(options, key=lambda x: len(x.get('poll_votes', [])))
+                        slot_time_str = winning_opt['slot_time']
+                        
+                        if not slot_time_str.endswith('Z') and '+' not in slot_time_str:
+                            slot_time_str += 'Z'
+                        slot_dt_utc = dt.datetime.fromisoformat(slot_time_str.replace('Z', '+00:00'))
+                        
+                        roster = auth.get_team_roster(team_id)
+                        attendees = [m['email'] for m in roster if m.get('email')]
+                        
+                        target_date = slot_dt_utc.date()
+                        hour = slot_dt_utc.hour
+                        pain_inserts = []
+                        
+                        for member in roster:
+                            name = member.get('name', 'Unknown')
+                            email = member.get('email') or name
+                            tz = member.get('tz', 'UTC')
+                            
+                            pain = calculate_local_pain(target_date, hour, tz)
+                            if pain > 0:
+                                pain_inserts.append({
+                                    'team_id': team_id,
+                                    'user_email': email,
+                                    'pain_score': pain
+                                })
+                                
+                        if pain_inserts:
+                            supabase.table('pain_ledger').insert(pain_inserts).execute()
+                            
+                        subject = f"Team Sync (Nync)"
+                        booked = False
+                        
+                        conns = supabase.table('calendar_connections').select('provider').eq('user_id', st.session_state.user.id).execute()
+                        providers = [c['provider'] for c in conns.data] if conns.data else []
+                        
+                        if 'outlook' in providers:
+                            booked = auth.book_outlook_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                        elif 'google' in providers:
+                            booked = auth.book_google_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                            
+                        if booked:
+                            st.toast("✅ Meeting Booked & Invites Sent!")
+                        else:
+                            st.warning("⚠️ Poll closed, but calendar booking failed (Check connections).")
+                            
                     supabase.table('polls').update({'status': 'closed'}).eq('id', p['id']).execute()
+                    time.sleep(1)
                     st.rerun(scope="fragment") 
                     
                 st.write("")

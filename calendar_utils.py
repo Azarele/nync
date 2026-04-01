@@ -116,7 +116,7 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
-        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees]
+        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees if email]
 
         payload = {
             "subject": subject,
@@ -130,6 +130,7 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload)
         return r.status_code in [201, 200]
     except: return False
+
 
 # --- GOOGLE AUTH ---
 def get_google_url():
@@ -147,7 +148,7 @@ def get_google_url():
                 "queryParams": {
                     "access_type": "offline", 
                     "prompt": "consent",
-                    "scope": "https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email"
+                    "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email"
                 }
             }
         })
@@ -248,3 +249,35 @@ def fetch_google_events(user_id, start_dt, end_dt):
                 
         return blocked_hours
     except: return []
+
+def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
+    if not supabase: return False
+    try:
+        token = refresh_google_token(user_id)
+        if not token: return False
+
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
+        
+        attendee_list = [{"email": email} for email in attendees if email]
+
+        payload = {
+            "summary": subject,
+            "start": {"dateTime": start_dt_utc.isoformat() + "Z", "timeZone": "UTC"},
+            "end": {"dateTime": end_dt_utc.isoformat() + "Z", "timeZone": "UTC"},
+            "attendees": attendee_list,
+            "conferenceData": {
+                "createRequest": {
+                    "requestId": f"nync_{user_id}_{int(dt.datetime.now().timestamp())}",
+                    "conferenceSolutionKey": {"type": "hangoutsMeet"}
+                }
+            }
+        }
+
+        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1"
+        r = requests.post(url, headers=headers, json=payload)
+        
+        return r.status_code in [200, 201]
+    except Exception as e: 
+        print(f"Error booking Google Meeting: {e}")
+        return False
