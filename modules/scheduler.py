@@ -6,6 +6,8 @@ import altair as alt
 import requests
 import calendar_utils as cal
 import email_utils 
+import asyncio
+from async_calendar_utils import gather_all_conflicts
 
 # ==========================================
 # --- 1. CORE LOGIC ENGINES ---
@@ -201,7 +203,8 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
         with st.spinner("Crunching the math & syncing calendars..."):
             
             conflicts_dict = {}
-            if check_live: conflicts_dict = fetch_all_conflicts(supabase, roster, target_date, days_to_scan)
+            if check_live:
+                conflicts_dict = asyncio.run(gather_all_conflicts(roster, target_date, days_to_scan))
                 
             top_slots = get_best_slots(roster, target_date, days_to_scan, conflicts_dict)
             cols = st.columns(3)

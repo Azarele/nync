@@ -7,3 +7,4 @@ python-dateutil
 pytz
 openai
 streamlit-javascript==0.1.5
+aiohttp==3.9.5
