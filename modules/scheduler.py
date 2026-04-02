@@ -5,13 +5,14 @@ import pandas as pd
 import altair as alt
 import requests
 import calendar_utils as cal
+import email_utils 
 
 # ==========================================
 # --- 1. CORE LOGIC ENGINES ---
 # ==========================================
 
-def calculate_local_pain(target_date, hour, user_tz_str):
-    """Calculates exactly how painful a UTC hour is for a local timezone."""
+def calculate_local_pain(target_date, hour, user_tz_str, work_start=9, work_end=17):
+    """Calculates exactly how painful a UTC hour is, dynamically bending around custom work hours!"""
     try:
         user_tz = pytz.timezone(user_tz_str)
         utc_time = dt.datetime.combine(target_date, dt.time(hour=hour)).replace(tzinfo=pytz.UTC)
@@ -19,18 +20,24 @@ def calculate_local_pain(target_date, hour, user_tz_str):
         local_hour = local_time.hour
         is_weekend = local_time.weekday() >= 5 
         
-        if 9 <= local_hour < 17: base_pain = 0 
-        elif 8 <= local_hour < 9 or 17 <= local_hour < 18: base_pain = 1 
-        elif 7 <= local_hour < 8 or 18 <= local_hour < 20: base_pain = 3 
-        elif 6 <= local_hour < 7 or 20 <= local_hour < 22: base_pain = 5 
-        else: base_pain = 10 
+        # --- THE DYNAMIC MATH ENGINE ---
+        if work_start <= local_hour < work_end: 
+            base_pain = 0  # In their core shift
+        elif (work_start - 1) <= local_hour < work_start or work_end <= local_hour < (work_end + 1): 
+            base_pain = 1  # 1 hour before/after shift
+        elif (work_start - 2) <= local_hour < (work_start - 1) or (work_end + 1) <= local_hour < (work_end + 3): 
+            base_pain = 3  # 2 hours early, or early evening
+        elif (work_start - 3) <= local_hour < (work_start - 2) or (work_end + 3) <= local_hour < (work_end + 5): 
+            base_pain = 5  # Late evening / very early
+        else: 
+            base_pain = 10 # Midnight / Deep Sleep
         
+        # Weekends add a flat +8 penalty, maxing out at 10
         if is_weekend: return min(10, base_pain + 8)
         return base_pain
     except: return 0
 
 def fetch_all_conflicts(supabase, roster, start_date, days):
-    """Fetches live calendar events for the entire team and normalizes them."""
     start_dt = dt.datetime.combine(start_date, dt.time.min) 
     end_dt = start_dt + dt.timedelta(days=days)
     
@@ -44,15 +51,12 @@ def fetch_all_conflicts(supabase, roster, start_date, days):
         
         blocked_strs = set()
         
-        # 1. Fetch Microsoft Graph Events
         if 'outlook' in providers:
             evts = cal.fetch_outlook_events(uid, start_dt, end_dt)
             for e in evts:
-                # Force to naive UTC for safe matching
                 e_naive = e.astimezone(dt.timezone.utc).replace(tzinfo=None) if e.tzinfo else e
                 blocked_strs.add(e_naive.isoformat())
                 
-        # 2. Fetch Google Calendar Events
         if 'google' in providers:
             evts = cal.fetch_google_events(uid, start_dt, end_dt)
             for e in evts:
@@ -74,7 +78,13 @@ def build_heatmap_dataframe(target_date, roster):
         for member in roster:
             name = member.get('name', 'Unknown')
             tz = member.get('tz', 'UTC')
-            pain = calculate_local_pain(target_date, h, tz)
+            
+            # PULL PERSONAL HOURS!
+            w_start = member.get('work_start', 9)
+            w_end = member.get('work_end', 17)
+            
+            pain = calculate_local_pain(target_date, h, tz, w_start, w_end)
+            
             data.append({
                 "Time": display_time, "Hour": h, 
                 "Member": name, "Pain Score": pain, "Local Timezone": tz
@@ -97,13 +107,16 @@ def get_best_slots(roster, start_date, days=7, conflicts_dict=None):
             conflict_count = 0
             
             for m in roster:
-                pain = calculate_local_pain(current_date, h, m.get('tz', 'UTC'))
+                # PULL PERSONAL HOURS!
+                w_start = m.get('work_start', 9)
+                w_end = m.get('work_end', 17)
+                
+                pain = calculate_local_pain(current_date, h, m.get('tz', 'UTC'), w_start, w_end)
                 uid = m.get('user_id')
                 
-                # --- APPLY LIVE CALENDAR PENALTY ---
                 if uid and str(uid) in conflicts_dict:
                     if slot_str in conflicts_dict[str(uid)]:
-                        pain += 25 # Massive penalty for overlapping an existing meeting!
+                        pain += 25 
                         conflict_count += 1
                         
                 total_pain += pain
@@ -116,12 +129,11 @@ def get_best_slots(roster, start_date, days=7, conflicts_dict=None):
                 'conflicts': conflict_count
             })
             
-    # Sort first by lowest pain, then by date (sooner is better)
     best_slots.sort(key=lambda x: (x['total_pain'], x['date']))
     return best_slots[:3]
 
-def fire_webhook(supabase, team_id, target_date, chosen_time, total_pain):
-    """Fires a payload to Discord, Slack, or Teams."""
+def notify_team(supabase, team_id, roster, target_date, chosen_time, total_pain):
+    """Fires Webhooks AND Blasts Emails instantly!"""
     try:
         t_data = supabase.table('teams').select('webhook_url, name').eq('id', team_id).single().execute()
         webhook_url = t_data.data.get('webhook_url')
@@ -145,7 +157,16 @@ def fire_webhook(supabase, team_id, target_date, chosen_time, total_pain):
                     "text": msg.replace('\n', '\n\n')
                 }
             requests.post(webhook_url, json=payload, timeout=3)
-    except Exception as e: print(f"Webhook failed: {e}")
+            
+        recipient_emails = []
+        for m in roster:
+            em = m.get('email') or m.get('ghost_email')
+            if em and '@' in em: recipient_emails.append(em)
+                
+        if recipient_emails:
+            email_utils.send_poll_email(recipient_emails, team_name, target_date, chosen_time)
+            
+    except Exception as e: print(f"Notification failed: {e}")
 
 
 # ==========================================
@@ -154,7 +175,6 @@ def fire_webhook(supabase, team_id, target_date, chosen_time, total_pain):
 
 @st.fragment
 def render_magic_suggest(supabase, team_id, roster, target_date):
-    """Renders the AI auto-scheduler button and its resulting slots."""
     if st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True):
         st.session_state.show_magic = not st.session_state.get('show_magic', False)
         st.rerun(scope="fragment")
@@ -173,19 +193,15 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
         if not scope: scope = "Next 7 Days"
         days_to_scan = 7 if scope == "Next 7 Days" else 1
         
-        # --- THE LIVE CALENDAR TOGGLE ---
-        check_live = st.checkbox("🔄 Avoid Calendar Conflicts (Live Sync)", value=True, help="Pulls live Google/Outlook data for the whole team to ensure no overlaps. May take a few seconds.")
+        check_live = st.checkbox("🔄 Avoid Calendar Conflicts (Live Sync)", value=True, help="Pulls live Google/Outlook data for the whole team.")
         
-        if days_to_scan == 7:
-            st.caption(f"Scanning **168 hours** starting from {target_date.strftime('%b %d')}.")
-        else:
-            st.caption(f"Scanning all **24 hours on {target_date.strftime('%b %d')}**.")
+        if days_to_scan == 7: st.caption(f"Scanning **168 hours** starting from {target_date.strftime('%b %d')}.")
+        else: st.caption(f"Scanning all **24 hours on {target_date.strftime('%b %d')}**.")
         
         with st.spinner("Crunching the math & syncing calendars..."):
             
             conflicts_dict = {}
-            if check_live:
-                conflicts_dict = fetch_all_conflicts(supabase, roster, target_date, days_to_scan)
+            if check_live: conflicts_dict = fetch_all_conflicts(supabase, roster, target_date, days_to_scan)
                 
             top_slots = get_best_slots(roster, target_date, days_to_scan, conflicts_dict)
             cols = st.columns(3)
@@ -196,13 +212,9 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
                         st.markdown(f"**{slot['date'].strftime('%a, %b %d')}**")
                         st.markdown(f"<h3 style='margin:0; padding:0; color:#4f46e5;'>{slot['time_str']}</h3>", unsafe_allow_html=True)
                         
-                        # Display clear conflict warnings!
-                        if slot['conflicts'] > 0:
-                            st.error(f"⚠️ {slot['conflicts']} Overlap(s)")
-                        else:
-                            st.success("✅ Clear Calendars")
+                        if slot['conflicts'] > 0: st.error(f"⚠️ {slot['conflicts']} Overlap(s)")
+                        else: st.success("✅ Clear Calendars")
                             
-                        # Base Pain Calculation (Removing the +25 conflict penalty for UI display)
                         base_pain = slot['total_pain'] - (slot['conflicts'] * 25)
                         st.caption(f"🔥 Base Pain: **{base_pain}**")
                         
@@ -216,7 +228,7 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
                                 }).execute()
                                 
                                 st.success("✅ Poll Created! Check the Pain Board.")
-                                fire_webhook(supabase, team_id, slot['date'], slot['time_str'], base_pain)
+                                notify_team(supabase, team_id, roster, slot['date'], slot['time_str'], base_pain)
                                 st.session_state.show_magic = False
                                 st.rerun(scope="fragment")
         st.divider()
@@ -296,7 +308,7 @@ def show(supabase, user, roster):
                                     supabase.table('poll_options').insert({'poll_id': poll_id, 'slot_time': slot_dt.isoformat(), 'pain_score': int(total_pain)}).execute()
                                     
                                     st.success(f"Poll created for {chosen_time}! Check the Pain Board.")
-                                    fire_webhook(supabase, team_id, target_date, chosen_time, total_pain)
+                                    notify_team(supabase, team_id, roster, target_date, chosen_time, total_pain)
                                     
         except Exception as e:
             st.altair_chart(heatmap, use_container_width=False)

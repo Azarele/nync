@@ -32,19 +32,38 @@ def check_calendar_connected(user_id):
         return len(res.data) > 0
     except: return False
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_team_roster(team_id):
-    roster = []
+    if not supabase: return []
     try:
-        real = supabase.table('team_members').select('user_id, profiles(email, default_timezone)').eq('team_id', team_id).not_.is_('user_id', 'null').execute()
-        for r in real.data:
-            if r['profiles']:
-                roster.append({'email': r['profiles']['email'], 'tz': r['profiles']['default_timezone'] or 'UTC', 'type': 'user', 'name': r['profiles']['email'].split('@')[0]})
-        ghost = supabase.table('team_members').select('ghost_name, ghost_email, ghost_timezone').eq('team_id', team_id).is_('user_id', 'null').execute()
-        for g in ghost.data:
-            roster.append({'email': g.get('ghost_email') or g.get('ghost_name'), 'tz': g['ghost_timezone'], 'type': 'ghost', 'name': g.get('ghost_name', 'Ghost')})
+        # Added work_start_hour and work_end_hour to the fetch list!
+        res = supabase.table('team_members').select('id, user_id, role, ghost_name, ghost_email, ghost_timezone, profiles(email, default_timezone, work_start_hour, work_end_hour)').eq('team_id', team_id).execute()
+        
+        roster = []
+        for m in res.data:
+            if m.get('user_id'): 
+                prof = m.get('profiles') or {}
+                # Safely pull the work hours, defaulting to 9 and 17 if not set yet
+                w_start = prof.get('work_start_hour') if prof.get('work_start_hour') is not None else 9
+                w_end = prof.get('work_end_hour') if prof.get('work_end_hour') is not None else 17
+                
+                roster.append({
+                    'id': m['id'], 'user_id': m['user_id'], 'role': m.get('role', 'member'),
+                    'email': prof.get('email', 'Unknown'), 'name': prof.get('email', 'Unknown').split('@')[0], 
+                    'tz': prof.get('default_timezone') or 'UTC',
+                    'work_start': w_start, 'work_end': w_end
+                })
+            else:
+                roster.append({
+                    'id': m['id'], 'user_id': None, 'role': 'ghost',
+                    'email': m.get('ghost_email') or '', 'name': m.get('ghost_name') or 'Ghost', 
+                    'tz': m.get('ghost_timezone') or 'UTC',
+                    'work_start': 9, 'work_end': 17 # Ghosts default to 9-to-5
+                })
         return roster
-    except: return []
+    except Exception as e: 
+        print(f"Error fetching roster: {e}")
+        return []
 
 def check_team_status(team_id):
     try:
