@@ -37,7 +37,7 @@ st.markdown("""
     } 
     
     /* 🚨 COMPLETELY HIDE STREAMLIT CLUTTER (Including top bar) 🚨 */
-    [data-testid="stHeader"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
+    header, .stAppHeader, [data-testid="stHeader"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
     
     /* Page Fade-In Animation */
     @keyframes slideUpFade {
@@ -255,8 +255,8 @@ else:
     with c_logo:
         try:
             with open("nync_marketing.png", "rb") as f: img_data = base64.b64encode(f.read()).decode()
-            # 🚨 ADJUSTED LOGO SIZE TO 65px for the navbar! 🚨
-            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='65' style='cursor:pointer;'></a>", unsafe_allow_html=True)
+            # 🚨 APPLIED THE WHITE-LOGO FILTER TO THE INNER NAVBAR TOO 🚨
+            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='65' style='cursor:pointer; filter: brightness(0) invert(1);'></a>", unsafe_allow_html=True)
         except:
             if st.button("⚡ Nync.", type="secondary"): st.session_state.nav = "Dashboard"; st.rerun()
 

@@ -5,25 +5,27 @@ def show():
     # --- UI COMPRESSION CSS ---
     st.markdown("""
     <style>
+        /* 1. Fix the centering issue by removing max-width constraint */
         .block-container {
-            padding-top: 1rem !important;
+            padding-top: 2rem !important;
             padding-bottom: 1rem !important;
-            max-width: 1000px;
         }
         div[data-testid="stTabs"] { margin-top: -10px; }
         div[data-testid="stForm"] { padding-bottom: 0px !important; }
+        
+        /* 2. MAGIC LOGO FIX: Forces any transparent logo to be solid white so it pops on the dark theme! */
+        [data-testid="stImage"] img {
+            filter: brightness(0) invert(1) !important;
+        }
     </style>
     """, unsafe_allow_html=True)
 
-    # WIDENED THE MAIN LOGIN BOX (0.7, 2.5, 0.7 instead of 1, 2, 1)
-    c1, c2, c3 = st.columns([0.7, 2.5, 0.7])
+    c1, c2, c3 = st.columns([1, 2.5, 1])
     
     with c2:
-        # MADE THE LOGO BIGGER (1, 1.5, 1 instead of 1.5, 1, 1.5)
         sc1, sc2, sc3 = st.columns([1, 1.5, 1])
         with sc2:
             try:
-                # This will now display your new transparent nync_marketing.png!
                 st.image("nync_marketing.png", use_container_width=True) 
             except:
                 st.markdown("<h1 style='text-align: center; margin:0;'>⚡</h1>", unsafe_allow_html=True)
