@@ -6,6 +6,7 @@ import altair as alt
 import requests
 import calendar_utils as cal
 import email_utils 
+import time
 import asyncio
 from async_calendar_utils import gather_all_conflicts
 
@@ -233,7 +234,10 @@ def render_magic_suggest(supabase, team_id, roster, target_date):
                                 st.success("✅ Poll Created! Check the Pain Board.")
                                 notify_team(supabase, team_id, roster, slot['date'], slot['time_str'], base_pain)
                                 st.session_state.show_magic = False
-                                st.rerun(scope="fragment")
+                                
+                                # FIX: FULL PAGE REFRESH TO UPDATE TABS
+                                time.sleep(1.2) 
+                                st.rerun() 
         st.divider()
 
 
@@ -312,6 +316,10 @@ def show(supabase, user, roster):
                                     
                                     st.success(f"Poll created for {chosen_time}! Check the Pain Board.")
                                     notify_team(supabase, team_id, roster, target_date, chosen_time, total_pain)
+                                    
+                                    # FIX: FULL PAGE REFRESH TO UPDATE TABS
+                                    time.sleep(1.2)
+                                    st.rerun()
                                     
         except Exception as e:
             st.altair_chart(heatmap, use_container_width=False)

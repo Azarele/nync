@@ -127,7 +127,6 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         
         attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees if email]
 
-        # FIX: Ensure clean string format without timezone metadata for Microsoft Graph
         start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
         end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -283,21 +282,23 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
     if not supabase: return False, None
     try:
         token = refresh_google_token(user_id)
-        if not token: return False, None
+        if not token: 
+            st.toast("❌ Google Calendar connection expired. Please reconnect in Settings.")
+            return False, None
 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
         attendee_list = [{"email": email} for email in attendees if email]
 
-        # FIX: Explicitly format to RFC3339 without double timezone metadata
-        start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
-        end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+        # FIX: Explicit RFC3339 format WITH timezone offset but WITHOUT the 'timeZone' parameter
+        start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
         payload = {
             "summary": subject,
-            "start": {"dateTime": start_str, "timeZone": "UTC"},
-            "end": {"dateTime": end_str, "timeZone": "UTC"},
+            "start": {"dateTime": start_str},
+            "end": {"dateTime": end_str},
             "attendees": attendee_list,
             "conferenceData": {
                 "createRequest": {
@@ -313,9 +314,9 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         if r.status_code in [200, 201]:
             return True, r.json().get("hangoutLink")
         else:
-            # If it still fails, it will now pop up and tell you exactly why (e.g. invalid permissions)
+            # Captures exact reason why Google rejected it
             error_msg = r.json().get('error', {}).get('message', 'Unknown API Error')
-            st.toast(f"Google API Error: {r.status_code} - {error_msg}")
+            st.toast(f"Google API Error {r.status_code}: {error_msg}")
             return False, None
     except Exception as e: 
         print(f"Error booking Google Meeting: {e}")
