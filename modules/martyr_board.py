@@ -111,8 +111,17 @@ def show(supabase, team_id):
                     if not provider_map:
                         st.error("Connect a Calendar", icon="⚠️")
                     else:
+                        # Grab team name early for the custom subject box
+                        t_data_res = supabase.table('teams').select('webhook_url, name').eq('id', team_id).execute()
+                        t_data = t_data_res.data[0] if t_data_res.data else {}
+                        team_name = t_data.get('name', 'Your Team')
+                        webhook_url = t_data.get('webhook_url')
+
                         selected_prov_label = st.selectbox("Video Platform", list(provider_map.keys()), key=f"prov_{p['id']}", label_visibility="collapsed")
                         actual_provider = provider_map[selected_prov_label]
+                        
+                        # Customizable Meeting Title
+                        custom_subject = st.text_input("Meeting Name", value=f"{team_name} Sync", key=f"subj_{p['id']}", label_visibility="collapsed")
                         
                         # --- BOOKING LOGIC ---
                         if st.button("📅 Book Meeting", key=f"close_{p['id']}", type="primary", use_container_width=True):
@@ -129,13 +138,12 @@ def show(supabase, team_id):
                                 roster = auth.get_team_roster(team_id)
                                 team_emails = [m['email'] for m in roster if m.get('email')]
                                 
-                                # 2. EXTRACT EXTERNAL GUEST EMAILS (Dynamically parsed from the vote name)
+                                # 2. EXTRACT EXTERNAL GUEST EMAILS
                                 guest_emails = []
                                 for opt in options:
                                     for vote in opt.get('poll_votes', []):
                                         v_name = vote.get('voter_name', '')
                                         if '(' in v_name and ')' in v_name and '@' in v_name:
-                                            # Pulls email from: Jane Doe (jane@acmecorp.com)
                                             email_part = v_name.split('(')[-1].replace(')', '').strip()
                                             guest_emails.append(email_part)
                                             
@@ -162,25 +170,20 @@ def show(supabase, team_id):
                                 if pain_inserts:
                                     supabase.table('pain_ledger').insert(pain_inserts).execute()
                                     
-                                subject = f"Team Sync (Nync)"
                                 booked = False
                                 video_link = None
                                 
-                                # 4. BOOK USING THE USER'S DROPDOWN SELECTION
+                                # 4. BOOK USING THE CUSTOM SUBJECT
                                 if actual_provider == 'outlook':
-                                    booked, video_link = auth.book_outlook_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                                    booked, video_link = auth.book_outlook_meeting(st.session_state.user.id, custom_subject, slot_dt_utc, 30, attendees)
                                 elif actual_provider == 'google':
-                                    booked, video_link = auth.book_google_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                                    booked, video_link = auth.book_google_meeting(st.session_state.user.id, custom_subject, slot_dt_utc, 30, attendees)
                                     
                                 if booked:
                                     st.toast(f"✅ Meeting Booked via {actual_provider.capitalize()}!")
                                     
                                     # --- POST-BOOKING NOTIFICATIONS ---
                                     try:
-                                        t_data = supabase.table('teams').select('webhook_url, name').eq('id', team_id).single().execute()
-                                        webhook_url = t_data.data.get('webhook_url')
-                                        team_name = t_data.data.get('name', 'Your Team')
-                                        
                                         time_str = slot_dt_utc.strftime('%H:%M UTC')
                                         
                                         # Webhook Blast
