@@ -38,7 +38,7 @@ st.markdown("""
     } 
     
     /* Hide Streamlit Clutter */
-    [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
+    [data-testid="stHeader"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
     
     /* Page Fade-In Animation */
     @keyframes slideUpFade {
