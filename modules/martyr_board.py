@@ -90,6 +90,13 @@ def show(supabase, team_id):
                 c1, c2 = st.columns([3, 1])
                 c1.markdown(f"**Poll Created:** {p['created_at'][:10]}")
                 
+                with st.popover("🔗 Share with External Client", use_container_width=True):
+                    st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
+                    
+                    # CHANGE `poll['id']` to `p['id']` here! 👇
+                    guest_url = f"https://nyncapp.streamlit.app/?guest_poll={p['id']}"
+                    st.code(guest_url, language=None)
+                
                 # --- BOOKING LOGIC ---
                 if c2.button("📅 Book Meeting", key=f"close_{p['id']}", type="primary", use_container_width=True):
                     options = p.get('poll_options', [])
