@@ -18,8 +18,10 @@ except: pass
 if "guest_poll" in st.query_params:
     poll_id = st.query_params["guest_poll"]
     from modules import guest_vote
-    guest_vote.show(supabase, poll_id)
+    # FIX: Use auth.supabase instead of the imported supabase module
+    guest_vote.show(auth.supabase, poll_id)
     st.stop() # Prevents the login screen from ever loading!
+    
 # --- GLOBAL PREMIUM CSS ---
 st.markdown("""
             
