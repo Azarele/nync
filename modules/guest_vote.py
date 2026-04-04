@@ -4,12 +4,12 @@ import pytz
 from streamlit_javascript import st_javascript
 
 def show(supabase, poll_id):
-    # Hide the sidebar for a clean client experience
+    # Hide the sidebar and top header for a clean, white-label client experience
     st.markdown("""
         <style>
-            [data-testid="stSidebar"] {display: none;}
-            [data-testid="collapsedControl"] {display: none;}
-            .stApp header {display: none;}
+            [data-testid="stSidebar"] {display: none !important;}
+            [data-testid="collapsedControl"] {display: none !important;}
+            .stApp header {display: none !important;}
         </style>
     """, unsafe_allow_html=True)
 
@@ -32,7 +32,7 @@ def show(supabase, poll_id):
         st.markdown("<p style='text-align: center; color: #6b7280;'>Select the time that works best for you.</p>", unsafe_allow_html=True)
         st.divider()
 
-        # Auto-Detect Client Timezone
+        # Auto-Detect Client Timezone using JS Bridge
         if 'guest_tz' not in st.session_state:
             client_tz = st_javascript("Intl.DateTimeFormat().resolvedOptions().timeZone")
             if client_tz and client_tz != "0" and client_tz != 0:
@@ -53,14 +53,14 @@ def show(supabase, poll_id):
                 st.write("")
                 opts_res = supabase.table('poll_options').select('id, slot_time').eq('poll_id', poll_id).execute()
                 
-                # Check if they already voted
+                # Check if they already voted in this browser session
                 voted_already = st.session_state.get('guest_voted', False)
                 
                 if voted_already:
                     st.success("🎉 Your vote has been recorded! You can safely close this window.")
                 else:
                     for opt in opts_res.data:
-                        # Convert UTC to Client's Local Time!
+                        # Convert UTC to Client's Local Time dynamically
                         utc_time = dt.datetime.fromisoformat(opt['slot_time']).replace(tzinfo=pytz.UTC)
                         local_time = utc_time.astimezone(guest_tz)
                         display_time = local_time.strftime("%A, %B %d • %I:%M %p")
@@ -68,11 +68,12 @@ def show(supabase, poll_id):
                         with st.container(border=True):
                             st.markdown(f"#### {display_time}")
                             if st.button("I'm available here", key=f"gv_{opt['id']}", type="primary", use_container_width=True):
-                                # Save their vote!
+                                
+                                # --- PERFECT MATCH FOR YOUR DATABASE SCHEMA ---
                                 supabase.table('poll_votes').insert({
                                     'poll_id': poll_id,
                                     'option_id': opt['id'],
-                                    'guest_name': guest_name
+                                    'voter_name': guest_name 
                                 }).execute()
                                 
                                 st.session_state.guest_voted = True
