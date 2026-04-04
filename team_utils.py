@@ -62,7 +62,8 @@ def get_team_roster(team_id):
                 })
         return roster
     except Exception as e: 
-        print(f"Error fetching roster: {e}")
+        import streamlit as st
+        st.error(f"🚨 DATABASE ERROR: {e}") # This will print the exact issue on your dashboard!
         return []
 
 def check_team_status(team_id):
