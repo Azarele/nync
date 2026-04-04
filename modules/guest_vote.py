@@ -2,6 +2,7 @@ import streamlit as st
 import datetime as dt
 import pytz
 from streamlit_javascript import st_javascript
+import base64 # Required for loading the logo
 
 def show(supabase, poll_id):
     # Hide the sidebar and top header for a clean, white-label client experience
@@ -14,11 +15,19 @@ def show(supabase, poll_id):
     """, unsafe_allow_html=True)
 
     st.markdown("<br><br>", unsafe_allow_html=True)
-    st.markdown("<h1 style='text-align: center; color: #4f46e5;'>Nync</h1>", unsafe_allow_html=True)
+    
+    # --- RENDER NYNC LOGO ---
+    try:
+        with open("nync_marketing.png", "rb") as f: 
+            img_data = base64.b64encode(f.read()).decode()
+        st.markdown(f"<div style='text-align: center;'><img src='data:image/png;base64,{img_data}' width='80'></div>", unsafe_allow_html=True)
+    except:
+        # Fallback just in case the image fails to load
+        st.markdown("<h1 style='text-align: center; color: #4f46e5;'>Nync</h1>", unsafe_allow_html=True)
     
     try:
         # Fetch the Poll and Team Name
-        poll_res = supabase.table('polls').select('status, teams(name)').eq('id', poll_id).single().execute()
+        poll_res = supabase.table('polls').select('status, teams(name)').eq('id', poll_id).maybe_single().execute()
         if not poll_res.data:
             st.error("This meeting link is invalid or has expired.")
             return
@@ -28,7 +37,7 @@ def show(supabase, poll_id):
             return
             
         team_name = poll_res.data['teams']['name']
-        st.markdown(f"<h3 style='text-align: center;'><b>{team_name}</b> has invited you to a meeting.</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='text-align: center; margin-top: 20px;'><b>{team_name}</b> has invited you to a meeting.</h3>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #6b7280;'>Select the time that works best for you.</p>", unsafe_allow_html=True)
         st.divider()
 
@@ -47,9 +56,13 @@ def show(supabase, poll_id):
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             st.caption(f"🌍 Times automatically converted to **{guest_tz_str}**")
-            guest_name = st.text_input("Your Name", placeholder="e.g. Jane Doe (Acme Corp)")
             
-            if guest_name:
+            # --- ADDED EMAIL COLLECTION ---
+            guest_name = st.text_input("Your Name", placeholder="e.g. Jane Doe")
+            guest_email = st.text_input("Your Email", placeholder="e.g. jane@acmecorp.com")
+            
+            # Require both fields to be filled before showing options
+            if guest_name and guest_email:
                 st.write("")
                 opts_res = supabase.table('poll_options').select('id, slot_time').eq('poll_id', poll_id).execute()
                 
@@ -69,14 +82,17 @@ def show(supabase, poll_id):
                             st.markdown(f"#### {display_time}")
                             if st.button("I'm available here", key=f"gv_{opt['id']}", type="primary", use_container_width=True):
                                 
-                                # --- PERFECT MATCH FOR YOUR DATABASE SCHEMA ---
+                                # Format into a single string to fit existing database schema
+                                combined_identity = f"{guest_name.strip()} ({guest_email.strip()})"
+                                
                                 supabase.table('poll_votes').insert({
                                     'poll_id': poll_id,
                                     'option_id': opt['id'],
-                                    'voter_name': guest_name 
+                                    'voter_name': combined_identity 
                                 }).execute()
                                 
                                 st.session_state.guest_voted = True
                                 st.rerun()
+                                
     except Exception as e:
         st.error("An error occurred loading the meeting details.")
