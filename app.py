@@ -1,6 +1,7 @@
 import streamlit as st
 import time
 import base64
+import supabase
 import html
 import auth_utils as auth
 import extra_streamlit_components as stx
@@ -12,8 +13,16 @@ try:
     st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
 except: pass
 
+# --- 🚨 INTERCEPT EXTERNAL GUEST LINKS ---
+# If a client clicks the link, we route them to the Guest Page and HALT the app.
+if "guest_poll" in st.query_params:
+    poll_id = st.query_params["guest_poll"]
+    from modules import guest_vote
+    guest_vote.show(supabase, poll_id)
+    st.stop() # Prevents the login screen from ever loading!
 # --- GLOBAL PREMIUM CSS ---
 st.markdown("""
+            
 <style>
     /* Import Premium SaaS Font */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');

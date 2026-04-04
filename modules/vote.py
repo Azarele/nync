@@ -34,6 +34,14 @@ def show(poll_id, supabase):
         st.error("Error loading poll.")
         return
 
+    # Assuming you are inside your poll loop and have access to `poll_id`
+    with st.popover("🔗 Share with External Client", use_container_width=True):
+        st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
+        
+        # Generate the unique guest link
+        guest_url = f"https://nyncapp.streamlit.app/?guest_poll={poll_id}"
+        st.code(guest_url, language=None)
+        
     # --- 3. DUPLICATE VOTE CHECK ---
     # Check if this user has already voted in this specific poll
     # We query strictly by their verified email
