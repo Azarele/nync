@@ -8,7 +8,7 @@ def show():
         sc1, sc2, sc3 = st.columns([1, 1, 1])
         with sc2:
             try:
-                st.image("nync_marketing.png", width=250) 
+                st.image("nync_marketing.png", width=150) 
             except:
                 st.header("⚡")
 
