@@ -83,6 +83,10 @@ def show(supabase, team_id):
         st.markdown("#### 🗳️ Active Polls")
         polls = supabase.table('polls').select('id, status, created_at, poll_options(id, slot_time, pain_score, poll_votes(voter_name))').eq('team_id', team_id).eq('status', 'active').order('created_at', desc=True).execute()
         
+        # PRE-FETCH CALENDAR CONNECTIONS
+        conns = supabase.table('calendar_connections').select('provider').eq('user_id', st.session_state.user.id).execute()
+        user_providers = [c['provider'] for c in conns.data] if conns.data else []
+        
         if not polls.data:
             st.info("No active polls right now.")
             return
@@ -90,92 +94,116 @@ def show(supabase, team_id):
         for p in polls.data:
             with st.container(border=True):
                 c1, c2 = st.columns([3, 1])
-                c1.markdown(f"**Poll Created:** {p['created_at'][:10]}")
                 
-                with st.popover("🔗 Share with External Client", use_container_width=True):
-                    st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
+                with c1:
+                    st.markdown(f"**Poll Created:** {p['created_at'][:10]}")
+                    with st.popover("🔗 Share with External Client", use_container_width=True):
+                        st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
+                        guest_url = f"https://nyncapp.streamlit.app/?guest_poll={p['id']}"
+                        st.code(guest_url, language=None)
+                
+                with c2:
+                    # --- DYNAMIC CALENDAR SELECTOR ---
+                    provider_map = {}
+                    if 'google' in user_providers: provider_map["🌐 Google Meet"] = "google"
+                    if 'outlook' in user_providers: provider_map["🟦 MS Teams"] = "outlook"
                     
-                    guest_url = f"https://nyncapp.streamlit.app/?guest_poll={p['id']}"
-                    st.code(guest_url, language=None)
-                
-                # --- BOOKING LOGIC ---
-                if c2.button("📅 Book Meeting", key=f"close_{p['id']}", type="primary", use_container_width=True):
-                    options = p.get('poll_options', [])
-                    if options:
-                        winning_opt = max(options, key=lambda x: len(x.get('poll_votes', [])))
-                        slot_time_str = winning_opt['slot_time']
+                    if not provider_map:
+                        st.error("Connect a Calendar", icon="⚠️")
+                    else:
+                        selected_prov_label = st.selectbox("Video Platform", list(provider_map.keys()), key=f"prov_{p['id']}", label_visibility="collapsed")
+                        actual_provider = provider_map[selected_prov_label]
                         
-                        if not slot_time_str.endswith('Z') and '+' not in slot_time_str:
-                            slot_time_str += 'Z'
-                        slot_dt_utc = dt.datetime.fromisoformat(slot_time_str.replace('Z', '+00:00'))
-                        
-                        roster = auth.get_team_roster(team_id)
-                        attendees = [m['email'] for m in roster if m.get('email')]
-                        
-                        target_date = slot_dt_utc.date()
-                        hour = slot_dt_utc.hour
-                        pain_inserts = []
-                        
-                        for member in roster:
-                            name = member.get('name', 'Unknown')
-                            email = member.get('email') or name
-                            tz = member.get('tz', 'UTC')
-                            
-                            pain = calculate_local_pain(target_date, hour, tz)
-                            if pain > 0:
-                                pain_inserts.append({
-                                    'team_id': team_id,
-                                    'user_email': email,
-                                    'pain_score': pain
-                                })
+                        # --- BOOKING LOGIC ---
+                        if st.button("📅 Book Meeting", key=f"close_{p['id']}", type="primary", use_container_width=True):
+                            options = p.get('poll_options', [])
+                            if options:
+                                winning_opt = max(options, key=lambda x: len(x.get('poll_votes', [])))
+                                slot_time_str = winning_opt['slot_time']
                                 
-                        if pain_inserts:
-                            supabase.table('pain_ledger').insert(pain_inserts).execute()
-                            
-                        subject = f"Team Sync (Nync)"
-                        booked = False
-                        video_link = None
-                        
-                        conns = supabase.table('calendar_connections').select('provider').eq('user_id', st.session_state.user.id).execute()
-                        providers = [c['provider'] for c in conns.data] if conns.data else []
-                        
-                        if 'outlook' in providers:
-                            booked, video_link = auth.book_outlook_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
-                        elif 'google' in providers:
-                            booked, video_link = auth.book_google_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
-                            
-                        if booked:
-                            st.toast("✅ Meeting Booked & Invites Sent!")
-                            
-                            # --- POST-BOOKING NOTIFICATIONS ---
-                            try:
-                                t_data = supabase.table('teams').select('webhook_url, name').eq('id', team_id).single().execute()
-                                webhook_url = t_data.data.get('webhook_url')
-                                team_name = t_data.data.get('name', 'Your Team')
+                                if not slot_time_str.endswith('Z') and '+' not in slot_time_str:
+                                    slot_time_str += 'Z'
+                                slot_dt_utc = dt.datetime.fromisoformat(slot_time_str.replace('Z', '+00:00'))
                                 
-                                time_str = slot_dt_utc.strftime('%H:%M UTC')
+                                # 1. GET TEAM ROSTER EMAILS
+                                roster = auth.get_team_roster(team_id)
+                                team_emails = [m['email'] for m in roster if m.get('email')]
                                 
-                                # 1. Fire the Webhook
-                                if webhook_url:
-                                    msg = f"✅ **Meeting locked for {team_name}!**\n\n🗓️ **Date:** {target_date.strftime('%B %d, %Y')} at {time_str}\n"
-                                    if video_link:
-                                        msg += f"🎥 **Here is your video link to join:** {video_link}\n"
+                                # 2. EXTRACT EXTERNAL GUEST EMAILS (Dynamically parsed from the vote name)
+                                guest_emails = []
+                                for opt in options:
+                                    for vote in opt.get('poll_votes', []):
+                                        v_name = vote.get('voter_name', '')
+                                        if '(' in v_name and ')' in v_name and '@' in v_name:
+                                            # Pulls email from: Jane Doe (jane@acmecorp.com)
+                                            email_part = v_name.split('(')[-1].replace(')', '').strip()
+                                            guest_emails.append(email_part)
+                                            
+                                # 3. COMBINE ALL ATTENDEES FOR INVITES
+                                attendees = list(set(team_emails + guest_emails))
+                                
+                                target_date = slot_dt_utc.date()
+                                hour = slot_dt_utc.hour
+                                pain_inserts = []
+                                
+                                for member in roster:
+                                    name = member.get('name', 'Unknown')
+                                    email = member.get('email') or name
+                                    tz = member.get('tz', 'UTC')
+                                    
+                                    pain = calculate_local_pain(target_date, hour, tz)
+                                    if pain > 0:
+                                        pain_inserts.append({
+                                            'team_id': team_id,
+                                            'user_email': email,
+                                            'pain_score': pain
+                                        })
                                         
-                                    payload = {"content": msg} if "discord" in webhook_url.lower() else {"text": msg}
-                                    requests.post(webhook_url, json=payload, timeout=3)
+                                if pain_inserts:
+                                    supabase.table('pain_ledger').insert(pain_inserts).execute()
+                                    
+                                subject = f"Team Sync (Nync)"
+                                booked = False
+                                video_link = None
                                 
-                                # 2. Send the Email Blast
-                                if attendees:
-                                    email_utils.send_booking_email(attendees, team_name, target_date, time_str, video_link)
-                            except Exception as e:
-                                print(f"Notification error: {e}")
-                        else:
-                            st.warning("⚠️ Poll closed, but calendar booking failed (Check connections).")
+                                # 4. BOOK USING THE USER'S DROPDOWN SELECTION
+                                if actual_provider == 'outlook':
+                                    booked, video_link = auth.book_outlook_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                                elif actual_provider == 'google':
+                                    booked, video_link = auth.book_google_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                                    
+                                if booked:
+                                    st.toast(f"✅ Meeting Booked via {actual_provider.capitalize()}!")
+                                    
+                                    # --- POST-BOOKING NOTIFICATIONS ---
+                                    try:
+                                        t_data = supabase.table('teams').select('webhook_url, name').eq('id', team_id).single().execute()
+                                        webhook_url = t_data.data.get('webhook_url')
+                                        team_name = t_data.data.get('name', 'Your Team')
+                                        
+                                        time_str = slot_dt_utc.strftime('%H:%M UTC')
+                                        
+                                        # Webhook Blast
+                                        if webhook_url:
+                                            msg = f"✅ **Meeting locked for {team_name}!**\n\n🗓️ **Date:** {target_date.strftime('%B %d, %Y')} at {time_str}\n"
+                                            if video_link:
+                                                msg += f"🎥 **Here is your video link to join:** {video_link}\n"
+                                                
+                                            payload = {"content": msg} if "discord" in webhook_url.lower() else {"text": msg}
+                                            requests.post(webhook_url, json=payload, timeout=3)
+                                        
+                                        # Email Blast to ALL Attendees
+                                        if attendees:
+                                            email_utils.send_booking_email(attendees, team_name, target_date, time_str, video_link)
+                                    except Exception as e:
+                                        print(f"Notification error: {e}")
+                                else:
+                                    st.warning(f"⚠️ Booking via {actual_provider.capitalize()} failed (Check your connection settings).")
+                                    
+                            supabase.table('polls').update({'status': 'closed'}).eq('id', p['id']).execute()
+                            time.sleep(1)
+                            st.rerun(scope="fragment") 
                             
-                    supabase.table('polls').update({'status': 'closed'}).eq('id', p['id']).execute()
-                    time.sleep(1)
-                    st.rerun(scope="fragment") 
-                    
                 st.write("")
                 options = p.get('poll_options', [])
                 if not options: continue
