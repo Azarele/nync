@@ -37,7 +37,7 @@ def send_poll_email(recipient_emails, team_name, target_date, chosen_time):
                     Please click the button below to visit the Pain Board and cast your vote on whether this time works for you.
                 </p>
                 
-                <a href="https://nyncapp.streamlit.app" style="display: inline-block; background-color: #4f46e5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">🗳️ Vote on Pain Board</a>
+                <a href="https://nync.app" style="display: inline-block; background-color: #4f46e5; color: white; padding: 14px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">🗳️ Vote on Pain Board</a>
                 
                 <hr style="border: none; border-top: 1px solid #e5e7eb; margin-top: 40px; margin-bottom: 20px;">
                 <p style="font-size: 12px; color: #9ca3af; text-align: center;">Sent securely by Nync Scheduler.</p>

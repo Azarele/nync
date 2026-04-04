@@ -18,13 +18,11 @@ except: pass
 if "guest_poll" in st.query_params:
     poll_id = st.query_params["guest_poll"]
     from modules import guest_vote
-    # FIX: Use auth.supabase instead of the imported supabase module
     guest_vote.show(auth.supabase, poll_id)
     st.stop() # Prevents the login screen from ever loading!
-    
+
 # --- GLOBAL PREMIUM CSS ---
 st.markdown("""
-            
 <style>
     /* Import Premium SaaS Font */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -143,6 +141,7 @@ if "code" in st.query_params:
         st.query_params.clear(); st.rerun()
     else:
         try:
+            # THIS IS THE CRITICAL LINE for Google Login PKCE Flow
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
             if res and res.session:
                 st.session_state.session = res.session
@@ -150,7 +149,8 @@ if "code" in st.query_params:
                 auth.save_google_token(res.user.id, res.session)
                 st.session_state.sync_cookies = True 
                 st.session_state.ignore_cookies = False
-        except: st.error("Login Failed.")
+        except Exception as e: 
+            st.error(f"Login Failed: {e}")
         st.query_params.clear(); st.rerun()
 
 if not st.session_state.session and not st.session_state.clear_cookies and not st.session_state.pending_restore and not st.session_state.ignore_cookies:
@@ -221,8 +221,20 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
 cookie_consent.show(cookies)
 
 if not st.session_state.session:
-    login.show()
-    if st.session_state.session: st.session_state.sync_cookies = True; st.session_state.ignore_cookies = False; st.rerun()
+    # --- ALLOW GOOGLE REVIEWERS TO SEE LEGAL PAGE WITHOUT LOGGING IN ---
+    if st.query_params.get("nav") == "Legal":
+        from modules import legal
+        legal.show()
+        st.write("")
+        if st.button("← Back to Login", type="primary"):
+            st.query_params.clear()
+            st.rerun()
+    else:
+        login.show()
+        if st.session_state.session: 
+            st.session_state.sync_cookies = True
+            st.session_state.ignore_cookies = False
+            st.rerun()
 else:
     if 'pending_invite' in st.session_state:
         code = st.session_state.pending_invite

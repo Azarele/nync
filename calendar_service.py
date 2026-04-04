@@ -177,7 +177,7 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
 # --- GOOGLE AUTH ---
 def get_google_url():
     try:
-        base_url = "https://nync.app/"
+        base_url = "https://nync.app"
         params = []
         if "invite" in st.query_params: params.append(f"invite={st.query_params['invite']}")
         
