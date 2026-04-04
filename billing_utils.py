@@ -9,7 +9,7 @@ def create_stripe_portal_session(user_email):
         if not customers.data: return None
         return stripe.billing_portal.Session.create(
             customer=customers.data[0].id,
-            return_url="https://nyncapp.streamlit.app/?nav=Settings"
+            return_url="https://nync.app/?nav=Settings"
         ).url
     except: return None
 
@@ -26,7 +26,7 @@ def verify_stripe_payment(session_id):
 def create_stripe_checkout(user_email, price_id, success_url=None, cancel_url=None):
     if "stripe" not in st.secrets: return None
     stripe.api_key = st.secrets["stripe"]["secret_key"]
-    base_url = "https://nyncapp.streamlit.app"
+    base_url = "https://nync.app/"
     if not success_url: success_url = f"{base_url}/?stripe_session_id={{CHECKOUT_SESSION_ID}}"
     if not cancel_url: cancel_url = f"{base_url}/?nav=Pricing"
     try:

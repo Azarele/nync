@@ -147,7 +147,7 @@ def notify_team(supabase, team_id, roster, target_date, chosen_time, total_pain)
             msg = f"🚨 **New Meeting Proposed for {team_name}** 🚨\n\n"
             msg += f"🗓️ **Time:** {target_date.strftime('%B %d, %Y')} at {chosen_time}\n"
             msg += f"🔥 **Total Team Pain:** {total_pain}\n\n"
-            msg += f"👉 **[Click here to vote on the Nync Pain Board!](https://nyncapp.streamlit.app)**"
+            msg += f"👉 **[Click here to vote on the Nync Pain Board!](https://nync.app/)**"
             
             if "discord" in url_lower: payload = {"content": msg}
             elif "slack" in url_lower: payload = {"text": msg}

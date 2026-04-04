@@ -203,7 +203,7 @@ def show(user, supabase):
             st.code(invite_code, language=None)
             
             st.caption("Invite Link")
-            invite_link = f"https://nyncapp.streamlit.app/?invite={invite_code}"
+            invite_link = f"https://nync.app/?invite={invite_code}"
             st.code(invite_link, language=None)
         
     with c_settings:

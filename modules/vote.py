@@ -39,7 +39,7 @@ def show(poll_id, supabase):
         st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
         
         # Generate the unique guest link
-        guest_url = f"https://nyncapp.streamlit.app/?guest_poll={poll_id}"
+        guest_url = f"https://nync.app/?guest_poll={poll_id}"
         st.code(guest_url, language=None)
         
     # --- 3. DUPLICATE VOTE CHECK ---

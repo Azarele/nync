@@ -87,8 +87,8 @@ def start_checkout(price_id):
     url = auth.create_stripe_checkout(
         st.session_state.user.email, 
         price_id,
-        success_url="https://nyncapp.streamlit.app/?stripe_session_id={CHECKOUT_SESSION_ID}",
-        cancel_url="https://nyncapp.streamlit.app/?stripe_cancel=true"
+        success_url="https://nync.app/?stripe_session_id={CHECKOUT_SESSION_ID}",
+        cancel_url="https://nync.app/?stripe_cancel=true"
     )
 
     if url:

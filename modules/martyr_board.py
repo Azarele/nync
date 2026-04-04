@@ -99,7 +99,7 @@ def show(supabase, team_id):
                     st.markdown(f"**Poll Created:** {p['created_at'][:10]}")
                     with st.popover("🔗 Share with External Client", use_container_width=True):
                         st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
-                        guest_url = f"https://nyncapp.streamlit.app/?guest_poll={p['id']}"
+                        guest_url = f"https://nync.app/?guest_poll={p['id']}"
                         st.code(guest_url, language=None)
                 
                 with c2:
