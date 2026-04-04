@@ -25,7 +25,6 @@ def handle_microsoft_callback(code, user_id):
             "grant_type": "authorization_code",
             "client_secret": st.secrets["microsoft"]["client_secret"],
         }
-        # Added 10s timeout to prevent hanging on login
         r = requests.post(token_url, data=payload, timeout=10)
         tokens = r.json()
         
@@ -88,7 +87,6 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
         endpoint = f"https://graph.microsoft.com/v1.0/me/calendarview?startDateTime={start_str}&endDateTime={end_str}&$select=subject,start,end,showAs"
         
         try:
-            # 5 second strict timeout for fetching live data
             r = requests.get(endpoint, headers=headers, timeout=5)
             if r.status_code == 401:
                 new_token = refresh_outlook_token(user_id)
@@ -129,21 +127,26 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         
         attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees if email]
 
+        # FIX: Ensure clean string format without timezone metadata for Microsoft Graph
+        start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+        end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
+
         payload = {
             "subject": subject,
-            "start": {"dateTime": start_dt_utc.isoformat(), "timeZone": "UTC"},
-            "end": {"dateTime": end_dt_utc.isoformat(), "timeZone": "UTC"},
+            "start": {"dateTime": start_str, "timeZone": "UTC"},
+            "end": {"dateTime": end_str, "timeZone": "UTC"},
             "attendees": attendee_list,
             "isOnlineMeeting": True, 
             "onlineMeetingProvider": "teamsForBusiness" 
         }
 
-        # 10s timeout because writing to Microsoft Graph takes longer
         r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload, timeout=10)
         
         if r.status_code in [201, 200]:
             return True, r.json().get("onlineMeeting", {}).get("joinUrl")
-        return False, None
+        else:
+            st.toast(f"Outlook Error: {r.status_code} - {r.json().get('error', {}).get('message', 'Unknown')}")
+            return False, None
     except Exception as e: 
         print(f"Failed to book outlook meeting: {e}")
         return False, None
@@ -238,7 +241,6 @@ def fetch_google_events(user_id, start_dt, end_dt):
         headers = {"Authorization": f"Bearer {token}"}
         
         try:
-            # 5 second strict timeout
             r = requests.get(url, headers=headers, timeout=5)
             
             if r.status_code == 401:
@@ -288,10 +290,14 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         
         attendee_list = [{"email": email} for email in attendees if email]
 
+        # FIX: Explicitly format to RFC3339 without double timezone metadata
+        start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+        end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+
         payload = {
             "summary": subject,
-            "start": {"dateTime": start_dt_utc.isoformat() + "Z", "timeZone": "UTC"},
-            "end": {"dateTime": end_dt_utc.isoformat() + "Z", "timeZone": "UTC"},
+            "start": {"dateTime": start_str, "timeZone": "UTC"},
+            "end": {"dateTime": end_str, "timeZone": "UTC"},
             "attendees": attendee_list,
             "conferenceData": {
                 "createRequest": {
@@ -302,13 +308,15 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         }
 
         url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1"
-        
-        # 10s timeout to ensure event is fully created
         r = requests.post(url, headers=headers, json=payload, timeout=10)
         
         if r.status_code in [200, 201]:
             return True, r.json().get("hangoutLink")
-        return False, None
+        else:
+            # If it still fails, it will now pop up and tell you exactly why (e.g. invalid permissions)
+            error_msg = r.json().get('error', {}).get('message', 'Unknown API Error')
+            st.toast(f"Google API Error: {r.status_code} - {error_msg}")
+            return False, None
     except Exception as e: 
         print(f"Error booking Google Meeting: {e}")
         return False, None
