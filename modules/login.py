@@ -1,22 +1,17 @@
 import streamlit as st
 import auth_utils as auth
+import base64
 
 def show():
     # --- UI COMPRESSION CSS ---
     st.markdown("""
     <style>
-        /* 1. Fix the centering issue by removing max-width constraint */
         .block-container {
             padding-top: 2rem !important;
             padding-bottom: 1rem !important;
         }
         div[data-testid="stTabs"] { margin-top: -10px; }
         div[data-testid="stForm"] { padding-bottom: 0px !important; }
-        
-        /* 2. MAGIC LOGO FIX: Forces any transparent logo to be solid white so it pops on the dark theme! */
-        [data-testid="stImage"] img {
-            filter: brightness(0) invert(1) !important;
-        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -25,8 +20,12 @@ def show():
     with c2:
         sc1, sc2, sc3 = st.columns([1, 1.5, 1])
         with sc2:
+            # 🚨 GUARANTEED WHITE LOGO OVERRIDE 🚨
             try:
-                st.image("nync_marketing.png", use_container_width=True) 
+                with open("nync_marketing.png", "rb") as f: 
+                    img_data = base64.b64encode(f.read()).decode()
+                # Forces the image to invert to white and center perfectly
+                st.markdown(f"<div style='text-align: center; margin-bottom: 10px;'><img src='data:image/png;base64,{img_data}' width='100%' style='max-width: 140px; filter: brightness(0) invert(1);'></div>", unsafe_allow_html=True)
             except:
                 st.markdown("<h1 style='text-align: center; margin:0;'>⚡</h1>", unsafe_allow_html=True)
 

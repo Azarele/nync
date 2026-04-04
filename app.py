@@ -36,8 +36,10 @@ st.markdown("""
         color: #f4f4f5; 
     } 
     
-    /* 🚨 COMPLETELY HIDE STREAMLIT CLUTTER (Including top bar) 🚨 */
-    header, .stAppHeader, [data-testid="stHeader"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
+    /* 🚨 COMPLETELY HIDE STREAMLIT CLUTTER (Scorched Earth Method) 🚨 */
+    header { visibility: hidden !important; display: none !important; height: 0px !important; }
+    .stApp > header { display: none !important; }
+    [data-testid="stHeader"], [data-testid="stToolbar"] { display: none !important; }
     
     /* Page Fade-In Animation */
     @keyframes slideUpFade {
