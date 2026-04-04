@@ -3,8 +3,6 @@ import auth_utils as auth
 
 def show():
     # --- UI COMPRESSION CSS ---
-    # This specifically targets and destroys Streamlit's huge default top/bottom padding
-    # and tightens the spacing around the tabs and forms so it fits on one screen.
     st.markdown("""
     <style>
         .block-container {
@@ -17,12 +15,15 @@ def show():
     </style>
     """, unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns([1, 2, 1])
+    # WIDENED THE MAIN LOGIN BOX (0.7, 2.5, 0.7 instead of 1, 2, 1)
+    c1, c2, c3 = st.columns([0.7, 2.5, 0.7])
     
     with c2:
+        # MADE THE LOGO BIGGER (1, 1.5, 1 instead of 1.5, 1, 1.5)
         sc1, sc2, sc3 = st.columns([1, 1.5, 1])
         with sc2:
             try:
+                # This will now display your new transparent nync_marketing.png!
                 st.image("nync_marketing.png", use_container_width=True) 
             except:
                 st.markdown("<h1 style='text-align: center; margin:0;'>⚡</h1>", unsafe_allow_html=True)
@@ -57,7 +58,6 @@ def show():
                         if auth.login_user(email, password):
                             st.success("Logged in!")
             
-            # 3. REPLACED DEFAULT STREAMLIT DIVIDER (WHICH ADDS TOO MUCH SPACE) WITH A CUSTOM THIN LINE
             st.markdown("<hr style='margin: 10px 0px 15px 0px; border-color: rgba(255,255,255,0.1);'>", unsafe_allow_html=True)
             
             google_url = auth.get_google_url()

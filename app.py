@@ -14,12 +14,11 @@ try:
 except: pass
 
 # --- 🚨 INTERCEPT EXTERNAL GUEST LINKS ---
-# If a client clicks the link, we route them to the Guest Page and HALT the app.
 if "guest_poll" in st.query_params:
     poll_id = st.query_params["guest_poll"]
     from modules import guest_vote
     guest_vote.show(auth.supabase, poll_id)
-    st.stop() # Prevents the login screen from ever loading!
+    st.stop() 
 
 # --- GLOBAL PREMIUM CSS ---
 st.markdown("""
@@ -37,7 +36,7 @@ st.markdown("""
         color: #f4f4f5; 
     } 
     
-    /* Hide Streamlit Clutter */
+    /* 🚨 COMPLETELY HIDE STREAMLIT CLUTTER (Including top bar) 🚨 */
     [data-testid="stHeader"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"], button[title="View fullscreen"] { display: none !important; }
     
     /* Page Fade-In Animation */
@@ -141,7 +140,6 @@ if "code" in st.query_params:
         st.query_params.clear(); st.rerun()
     else:
         try:
-            # THIS IS THE CRITICAL LINE for Google Login PKCE Flow
             res = auth.supabase.auth.exchange_code_for_session({"auth_code": code})
             if res and res.session:
                 st.session_state.session = res.session
@@ -221,7 +219,6 @@ if "stripe_session_id" in st.query_params and st.session_state.user:
 cookie_consent.show(cookies)
 
 if not st.session_state.session:
-    # --- ALLOW GOOGLE REVIEWERS TO SEE LEGAL PAGE WITHOUT LOGGING IN ---
     if st.query_params.get("nav") == "Legal":
         from modules import legal
         legal.show()
@@ -258,7 +255,8 @@ else:
     with c_logo:
         try:
             with open("nync_marketing.png", "rb") as f: img_data = base64.b64encode(f.read()).decode()
-            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='80' style='cursor:pointer;'></a>", unsafe_allow_html=True)
+            # 🚨 ADJUSTED LOGO SIZE TO 65px for the navbar! 🚨
+            st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='65' style='cursor:pointer;'></a>", unsafe_allow_html=True)
         except:
             if st.button("⚡ Nync.", type="secondary"): st.session_state.nav = "Dashboard"; st.rerun()
 
