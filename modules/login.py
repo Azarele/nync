@@ -20,7 +20,7 @@ def show():
     c1, c2, c3 = st.columns([1, 2, 1])
     
     with c2:
-        sc1, sc2, sc3 = st.columns([1.5, 1, 1.5])
+        sc1, sc2, sc3 = st.columns([1, 1.5, 1])
         with sc2:
             try:
                 st.image("nync_marketing.png", use_container_width=True) 
