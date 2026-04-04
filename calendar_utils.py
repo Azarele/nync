@@ -181,12 +181,12 @@ def get_google_url():
         
         redirect_url = f"{base_url}/?{'&'.join(params)}" if params else base_url
         
-        # FIX: Moved 'scopes' to the correct Supabase options level and used the master calendar scope
+        # FIX: Reverted to the safer, limited scopes (Events read/write + Profile read-only)
         data = supabase.auth.sign_in_with_oauth({
             "provider": "google", 
             "options": {
                 "redirect_to": redirect_url,
-                "scopes": "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/userinfo.email",
+                "scopes": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email",
                 "queryParams": {
                     "access_type": "offline", 
                     "prompt": "consent"
