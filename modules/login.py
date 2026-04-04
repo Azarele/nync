@@ -2,28 +2,6 @@ import streamlit as st
 import auth_utils as auth
 
 def show():
-    # 1. FIX THE APP NAME ERROR
-    st.markdown("<h1 style='text-align: center;'>Nync</h1>", unsafe_allow_html=True)
-    
-    # 2. FIX THE APP PURPOSE ERROR
-    st.markdown("""
-    <p style='text-align: center; color: #6b7280; max-width: 500px; margin: 0 auto 20px auto;'>
-        Nync is a team scheduling and calendar synchronization application. 
-        It securely connects to your Google or Microsoft calendar to automatically 
-        detect conflicts and help your team find the best meeting times.
-    </p>
-    """, unsafe_allow_html=True)
-    
-    # ... [YOUR EXISTING LOGIN BUTTONS GO HERE] ...
-    
-    # 3. FIX THE PRIVACY POLICY LINK ERROR
-    st.markdown("""
-    <div style='text-align: center; margin-top: 30px; font-size: 12px;'>
-        <a href='https://nync.app/?nav=Legal' target='_self' style='color: #9ca3af; text-decoration: underline;'>Privacy Policy & Terms of Service</a>
-    </div>
-    """, unsafe_allow_html=True)
-
-def show():
     c1, c2, c3 = st.columns([1, 2, 1])
     
     with c2:
@@ -34,8 +12,18 @@ def show():
             except:
                 st.header("⚡")
 
-        st.markdown("<h1 style='text-align: center; margin-top: 0px;'>Nync.</h1>", unsafe_allow_html=True)
+        # 1. FIX THE APP NAME ERROR (Google Verification)
+        st.markdown("<h1 style='text-align: center; margin-top: 0px;'>Nync</h1>", unsafe_allow_html=True)
         st.markdown("<p style='text-align: center; color: #888;'>Stop maximizing convenience. Start minimizing pain.</p>", unsafe_allow_html=True)
+        
+        # 2. FIX THE APP PURPOSE ERROR (Google Verification)
+        st.markdown("""
+        <p style='text-align: center; color: #6b7280; font-size: 14px; max-width: 500px; margin: 0 auto 20px auto;'>
+            Nync is a team scheduling and calendar synchronization application. 
+            It securely connects to your Google or Microsoft calendar to automatically 
+            detect conflicts and help your team find the best meeting times.
+        </p>
+        """, unsafe_allow_html=True)
         
         st.write("") 
 
@@ -74,3 +62,10 @@ def show():
                     else:
                         if auth.signup_user(email, password):
                             st.success("Account created!")
+
+        # 3. FIX THE PRIVACY POLICY LINK ERROR (Google Verification)
+        st.markdown("""
+        <div style='text-align: center; margin-top: 30px; font-size: 12px;'>
+            <a href='https://nync.app/?nav=Legal' target='_self' style='color: #9ca3af; text-decoration: underline;'>Privacy Policy & Terms of Service</a>
+        </div>
+        """, unsafe_allow_html=True)
