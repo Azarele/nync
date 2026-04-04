@@ -1,7 +1,14 @@
 import streamlit as st
 import requests
 import datetime as dt
+import re
 from db import supabase
+
+# --- SAFE EMAIL VALIDATOR ---
+def is_valid_email(email):
+    """Prevents garbage strings from crashing the Google/Microsoft APIs"""
+    if not email: return False
+    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", str(email).strip()))
 
 # --- MICROSOFT AUTH ---
 def get_microsoft_url(user_id):
@@ -125,7 +132,8 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
-        attendee_list = [{"emailAddress": {"address": email}, "type": "required"} for email in attendees if email]
+        # FIX 1: Filter out broken emails before sending to Microsoft
+        attendee_list = [{"emailAddress": {"address": email.strip()}, "type": "required"} for email in attendees if is_valid_email(email)]
 
         start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
         end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
@@ -135,8 +143,9 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
             "start": {"dateTime": start_str, "timeZone": "UTC"},
             "end": {"dateTime": end_str, "timeZone": "UTC"},
             "attendees": attendee_list,
-            "isOnlineMeeting": True, 
-            "onlineMeetingProvider": "teamsForBusiness" 
+            # FIX 2: Only specify that it's online. Removing 'teamsForBusiness' 
+            # allows Personal/Consumer Microsoft accounts to automatically fall back to their valid provider.
+            "isOnlineMeeting": True 
         }
 
         r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload, timeout=10)
@@ -144,7 +153,7 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
         if r.status_code in [201, 200]:
             return True, r.json().get("onlineMeeting", {}).get("joinUrl")
         else:
-            st.toast(f"Outlook Error: {r.status_code} - {r.json().get('error', {}).get('message', 'Unknown')}")
+            st.toast(f"Outlook Error {r.status_code}: {r.json().get('error', {}).get('message', 'Unknown')}")
             return False, None
     except Exception as e: 
         print(f"Failed to book outlook meeting: {e}")
@@ -289,11 +298,12 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
-        attendee_list = [{"email": email} for email in attendees if email]
+        # FIX 1: Filter out broken emails before sending to Google
+        attendee_list = [{"email": email.strip()} for email in attendees if is_valid_email(email)]
 
-        # FIX: Explicit RFC3339 format WITH timezone offset but WITHOUT the 'timeZone' parameter
-        start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-        end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+        # FIX 2: Absolute strict ISO format string with trailing Z
+        start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+        end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
 
         payload = {
             "summary": subject,
@@ -314,7 +324,6 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         if r.status_code in [200, 201]:
             return True, r.json().get("hangoutLink")
         else:
-            # Captures exact reason why Google rejected it
             error_msg = r.json().get('error', {}).get('message', 'Unknown API Error')
             st.toast(f"Google API Error {r.status_code}: {error_msg}")
             return False, None
