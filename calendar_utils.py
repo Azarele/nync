@@ -119,10 +119,10 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
     except: return []
 
 def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
-    if not supabase: return False
+    if not supabase: return False, None
     try:
         token = refresh_outlook_token(user_id) 
-        if not token: return False
+        if not token: return False, None
 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
@@ -140,10 +140,13 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
 
         # 10s timeout because writing to Microsoft Graph takes longer
         r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload, timeout=10)
-        return r.status_code in [201, 200]
+        
+        if r.status_code in [201, 200]:
+            return True, r.json().get("onlineMeeting", {}).get("joinUrl")
+        return False, None
     except Exception as e: 
         print(f"Failed to book outlook meeting: {e}")
-        return False
+        return False, None
 
 
 # --- GOOGLE AUTH ---
@@ -275,10 +278,10 @@ def fetch_google_events(user_id, start_dt, end_dt):
     except: return []
 
 def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
-    if not supabase: return False
+    if not supabase: return False, None
     try:
         token = refresh_google_token(user_id)
-        if not token: return False
+        if not token: return False, None
 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
@@ -303,7 +306,9 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
         # 10s timeout to ensure event is fully created
         r = requests.post(url, headers=headers, json=payload, timeout=10)
         
-        return r.status_code in [200, 201]
+        if r.status_code in [200, 201]:
+            return True, r.json().get("hangoutLink")
+        return False, None
     except Exception as e: 
         print(f"Error booking Google Meeting: {e}")
-        return False
+        return False, None

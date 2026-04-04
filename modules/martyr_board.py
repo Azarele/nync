@@ -2,6 +2,8 @@ import streamlit as st
 import auth_utils as auth
 import datetime as dt
 import time
+import requests      
+import email_utils   
 from modules.scheduler import calculate_local_pain
 
 @st.fragment 
@@ -93,7 +95,6 @@ def show(supabase, team_id):
                 with st.popover("🔗 Share with External Client", use_container_width=True):
                     st.markdown("Copy this link and send it to your client. They can vote without logging in, and times will automatically convert to their local timezone.")
                     
-                    # CHANGE `poll['id']` to `p['id']` here! 👇
                     guest_url = f"https://nyncapp.streamlit.app/?guest_poll={p['id']}"
                     st.code(guest_url, language=None)
                 
@@ -133,17 +134,41 @@ def show(supabase, team_id):
                             
                         subject = f"Team Sync (Nync)"
                         booked = False
+                        video_link = None
                         
                         conns = supabase.table('calendar_connections').select('provider').eq('user_id', st.session_state.user.id).execute()
                         providers = [c['provider'] for c in conns.data] if conns.data else []
                         
                         if 'outlook' in providers:
-                            booked = auth.book_outlook_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                            booked, video_link = auth.book_outlook_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
                         elif 'google' in providers:
-                            booked = auth.book_google_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
+                            booked, video_link = auth.book_google_meeting(st.session_state.user.id, subject, slot_dt_utc, 30, attendees)
                             
                         if booked:
                             st.toast("✅ Meeting Booked & Invites Sent!")
+                            
+                            # --- POST-BOOKING NOTIFICATIONS ---
+                            try:
+                                t_data = supabase.table('teams').select('webhook_url, name').eq('id', team_id).single().execute()
+                                webhook_url = t_data.data.get('webhook_url')
+                                team_name = t_data.data.get('name', 'Your Team')
+                                
+                                time_str = slot_dt_utc.strftime('%H:%M UTC')
+                                
+                                # 1. Fire the Webhook
+                                if webhook_url:
+                                    msg = f"✅ **Meeting locked for {team_name}!**\n\n🗓️ **Date:** {target_date.strftime('%B %d, %Y')} at {time_str}\n"
+                                    if video_link:
+                                        msg += f"🎥 **Here is your video link to join:** {video_link}\n"
+                                        
+                                    payload = {"content": msg} if "discord" in webhook_url.lower() else {"text": msg}
+                                    requests.post(webhook_url, json=payload, timeout=3)
+                                
+                                # 2. Send the Email Blast
+                                if attendees:
+                                    email_utils.send_booking_email(attendees, team_name, target_date, time_str, video_link)
+                            except Exception as e:
+                                print(f"Notification error: {e}")
                         else:
                             st.warning("⚠️ Poll closed, but calendar booking failed (Check connections).")
                             
