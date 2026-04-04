@@ -10,6 +10,15 @@ def is_valid_email(email):
     if not email: return False
     return bool(re.match(r"[^@]+@[^@]+\.[^@]+", str(email).strip()))
 
+def get_provider_token(user_id, provider):
+    """Safely retrieves the CURRENT access token without forcing a refresh"""
+    if not supabase: return None
+    try:
+        res = supabase.table("calendar_connections").select("access_token").eq("user_id", user_id).eq("provider", provider).maybe_single().execute()
+        if res and res.data: return res.data.get("access_token")
+        return None
+    except: return None
+
 # --- MICROSOFT AUTH ---
 def get_microsoft_url(user_id):
     try:
@@ -126,13 +135,13 @@ def fetch_outlook_events(user_id, start_dt, end_dt):
 def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
     if not supabase: return False, None
     try:
-        token = refresh_outlook_token(user_id) 
+        # Use existing token first
+        token = get_provider_token(user_id, "outlook") 
         if not token: return False, None
 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
-        # FIX 1: Filter out broken emails before sending to Microsoft
         attendee_list = [{"emailAddress": {"address": email.strip()}, "type": "required"} for email in attendees if is_valid_email(email)]
 
         start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S")
@@ -143,13 +152,18 @@ def book_outlook_meeting(user_id, subject, start_dt_utc, duration_minutes, atten
             "start": {"dateTime": start_str, "timeZone": "UTC"},
             "end": {"dateTime": end_str, "timeZone": "UTC"},
             "attendees": attendee_list,
-            # FIX 2: Only specify that it's online. Removing 'teamsForBusiness' 
-            # allows Personal/Consumer Microsoft accounts to automatically fall back to their valid provider.
             "isOnlineMeeting": True 
         }
 
         r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload, timeout=10)
         
+        # If token actually expired, retry once
+        if r.status_code == 401:
+            token = refresh_outlook_token(user_id)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+                r = requests.post("https://graph.microsoft.com/v1.0/me/events", headers=headers, json=payload, timeout=10)
+
         if r.status_code in [201, 200]:
             return True, r.json().get("onlineMeeting", {}).get("joinUrl")
         else:
@@ -185,16 +199,25 @@ def get_google_url():
 
 def save_google_token(user_id, session):
     try:
-        if not session.provider_token: return False
+        if not getattr(session, 'provider_token', None): return False
+        
+        # FIX: Check the database to preserve existing refresh tokens
+        existing = supabase.table("calendar_connections").select("id, refresh_token").eq("user_id", user_id).eq("provider", "google").execute()
+        
+        ref_token = getattr(session, 'provider_refresh_token', None)
+        
+        # If Google didn't send a new refresh token, KEEP the old one so it doesn't break!
+        if existing.data and not ref_token:
+            ref_token = existing.data[0].get("refresh_token")
+
         data = {
             "user_id": user_id, 
             "provider": "google",
             "access_token": session.provider_token,
-            "refresh_token": session.provider_refresh_token, 
+            "refresh_token": ref_token, 
             "expires_in": 3599 
         }
 
-        existing = supabase.table("calendar_connections").select("id").eq("user_id", user_id).eq("provider", "google").execute()
         if existing.data:
             supabase.table("calendar_connections").update(data).eq("user_id", user_id).eq("provider", "google").execute()
         else:
@@ -208,9 +231,13 @@ def refresh_google_token(user_id):
     if not supabase: return None
     try:
         record = supabase.table("calendar_connections").select("*").eq("user_id", user_id).eq("provider", "google").single().execute()
-        if not record.data or not record.data.get("refresh_token"): return None
+        if not record.data or not record.data.get("refresh_token"): 
+            print("No Google refresh token found in DB.")
+            return None
         
-        if "google" not in st.secrets: return None
+        if "google" not in st.secrets: 
+            print("Missing Google credentials in st.secrets.")
+            return None
         
         refresh_token = record.data.get("refresh_token")
         token_url = "https://oauth2.googleapis.com/token"
@@ -225,7 +252,9 @@ def refresh_google_token(user_id):
         r = requests.post(token_url, data=payload, timeout=10)
         new_tokens = r.json()
         
-        if "access_token" not in new_tokens: return None
+        if "access_token" not in new_tokens: 
+            print("Failed to refresh Google token.")
+            return None
         
         supabase.table("calendar_connections").update({
             "access_token": new_tokens["access_token"],
@@ -233,7 +262,9 @@ def refresh_google_token(user_id):
         }).eq("user_id", user_id).eq("provider", "google").execute()
         
         return new_tokens["access_token"]
-    except: return None
+    except Exception as e:
+        print(f"Error in refresh_google_token: {e}")
+        return None
 
 def fetch_google_events(user_id, start_dt, end_dt):
     if not supabase or not user_id: return []
@@ -290,18 +321,17 @@ def fetch_google_events(user_id, start_dt, end_dt):
 def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attendees):
     if not supabase: return False, None
     try:
-        token = refresh_google_token(user_id)
+        # Check existing token BEFORE forcing a refresh
+        token = get_provider_token(user_id, "google")
         if not token: 
-            st.toast("❌ Google Calendar connection expired. Please reconnect in Settings.")
+            st.toast("❌ Google Calendar connection missing. Please reconnect in Settings.")
             return False, None
 
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         end_dt_utc = start_dt_utc + dt.timedelta(minutes=duration_minutes)
         
-        # FIX 1: Filter out broken emails before sending to Google
         attendee_list = [{"email": email.strip()} for email in attendees if is_valid_email(email)]
 
-        # FIX 2: Absolute strict ISO format string with trailing Z
         start_str = start_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
         end_str = end_dt_utc.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
 
@@ -318,8 +348,18 @@ def book_google_meeting(user_id, subject, start_dt_utc, duration_minutes, attend
             }
         }
 
-        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1"
+        # Automatically force Google to send email invites
+        url = "https://www.googleapis.com/calendar/v3/calendars/primary/events?sendUpdates=all&conferenceDataVersion=1"
         r = requests.post(url, headers=headers, json=payload, timeout=10)
+        
+        # If Token is actually expired, retry with a fresh one
+        if r.status_code == 401:
+            token = refresh_google_token(user_id)
+            if not token:
+                st.toast("❌ Google Calendar token completely expired. Disconnect & Reconnect in Settings.")
+                return False, None
+            headers["Authorization"] = f"Bearer {token}"
+            r = requests.post(url, headers=headers, json=payload, timeout=10)
         
         if r.status_code in [200, 201]:
             return True, r.json().get("hangoutLink")
