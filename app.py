@@ -48,7 +48,7 @@ st.markdown("""
     }
     .main .block-container {
         animation: slideUpFade 0.5s ease-out forwards;
-        padding-top: 2rem !important;
+        padding-top: 0.5rem !important;
         padding-bottom: 5rem !important;
     }
     
@@ -304,13 +304,15 @@ else:
 
             if len(my_teams) > 1:
                 c1, c2 = st.columns([3, 1])
-                c1.markdown(f"<h3 style='margin-bottom:20px;'>{safe_team} {badge_html}</h3>", unsafe_allow_html=True)
+                # Added margin-top: 0px;
+                c1.markdown(f"<h3 style='margin-top: 0px; margin-bottom:20px;'>{safe_team} {badge_html}</h3>", unsafe_allow_html=True)
                 new = c2.selectbox("Switch Team", list(my_teams.keys()), label_visibility="collapsed")
                 if new != st.session_state.active_team:
                     st.session_state.active_team = new
                     st.rerun()
             else:
-                st.markdown(f"<h3 style='margin-bottom:20px;'>{safe_team} {badge_html}</h3>", unsafe_allow_html=True)
+                # Added margin-top: 0px;
+                st.markdown(f"<h3 style='margin-top: 0px; margin-bottom:20px;'>{safe_team} {badge_html}</h3>", unsafe_allow_html=True)
 
             if status == 'locked':
                 st.error("Team Locked (Trial Expired)")
