@@ -36,20 +36,17 @@ st.markdown("""
         color: #f4f4f5; 
     } 
     
-    /* 🚨 COMPLETELY HIDE STREAMLIT CLUTTER (Scorched Earth Method) 🚨 */
+    /* 🚨 SCORCHED EARTH TOP GAP REMOVAL 🚨 */
     header { visibility: hidden !important; display: none !important; height: 0px !important; }
     .stApp > header { display: none !important; }
-    [data-testid="stHeader"], [data-testid="stToolbar"] { display: none !important; }
+    [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"] { display: none !important; }
     
-    /* Page Fade-In Animation */
-    @keyframes slideUpFade {
-        from { opacity: 0; transform: translateY(15px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
     .main .block-container {
         animation: slideUpFade 0.5s ease-out forwards;
-        padding-top: 0.5rem !important;
+        padding-top: 0rem !important;  
+        margin-top: -55px !important;  /* Forcefully pulls the entire app to the absolute top edge! */
         padding-bottom: 5rem !important;
+        max-width: 1200px; /* Keeps the UI tight and readable */
     }
     
     /* Beautiful Interactive Buttons */
