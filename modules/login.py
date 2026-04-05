@@ -11,18 +11,23 @@ def show():
             padding-bottom: 1rem !important;
         }
         div[data-testid="stTabs"] { margin-top: -10px; }
-        /* Removed the aggressive stForm padding override so the button doesn't hang out! */
     </style>
     """, unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns([1, 2.5, 1])
     
     with c2:
-        # 🚨 PERFECT CENTERING FIX: Removed sub-columns. The div width:100% guarantees exact center!
+        # 🚨 THE FLEXBOX CENTERING FIX 🚨
         try:
             with open("nync_marketing.png", "rb") as f: 
                 img_data = base64.b64encode(f.read()).decode()
-            st.markdown(f"<div style='width: 100%; text-align: center; margin-bottom: 10px;'><img src='data:image/png;base64,{img_data}' width='140' style='filter: brightness(0) invert(1);'></div>", unsafe_allow_html=True)
+            
+            # Using Flexbox ensures the image is forcefully pushed to the absolute center of the container
+            st.markdown(f"""
+                <div style='display: flex; justify-content: center; align-items: center; width: 100%; margin-bottom: 10px;'>
+                    <img src='data:image/png;base64,{img_data}' style='width: 140px; filter: brightness(0) invert(1);'>
+                </div>
+            """, unsafe_allow_html=True)
         except:
             st.markdown("<h1 style='text-align: center; margin:0;'>⚡</h1>", unsafe_allow_html=True)
 
