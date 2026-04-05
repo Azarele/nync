@@ -17,23 +17,21 @@ def show():
     c1, c2, c3 = st.columns([1, 2.5, 1])
     
     with c2:
-        # 🚨 THE FLEXBOX CENTERING FIX 🚨
+        # 🚨 THE ULTIMATE CENTERING FIX 🚨
+        # Bundles the logo, title, and subtitle into ONE unbreakable flexbox column
         try:
             with open("nync_marketing.png", "rb") as f: 
                 img_data = base64.b64encode(f.read()).decode()
             
-            # Using Flexbox ensures the image is forcefully pushed to the absolute center of the container
             st.markdown(f"""
-                <div style='display: flex; justify-content: center; align-items: center; width: 100%; margin-bottom: 10px;'>
-                    <img src='data:image/png;base64,{img_data}' style='width: 140px; filter: brightness(0) invert(1);'>
+                <div style='display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; text-align: center;'>
+                    <img src='data:image/png;base64,{img_data}' style='width: 140px; filter: brightness(0) invert(1); margin-bottom: 0px;'>
+                    <h1 style='margin: 0px; padding: 0px; font-size: 2.5rem;'>Nync</h1>
+                    <p style='color: #888; font-size: 13px; margin: 0px 0px 10px 0px;'>Stop maximizing convenience. Start minimizing pain.</p>
                 </div>
             """, unsafe_allow_html=True)
         except:
-            st.markdown("<h1 style='text-align: center; margin:0;'>⚡</h1>", unsafe_allow_html=True)
-
-        # 1. TIGHTER HEADERS & SUBTITLES
-        st.markdown("<h1 style='text-align: center; margin-top: -10px; margin-bottom: 0px; padding-bottom: 0px;'>Nync</h1>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center; color: #888; font-size: 13px; margin-top: 0px; margin-bottom: 5px;'>Stop maximizing convenience. Start minimizing pain.</p>", unsafe_allow_html=True)
+            st.markdown("<h1 style='text-align: center; margin:0;'>⚡ Nync</h1>", unsafe_allow_html=True)
         
         # 2. TIGHTER GOOGLE COMPLIANCE TEXT
         st.markdown("""
