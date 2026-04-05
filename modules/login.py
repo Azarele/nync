@@ -17,15 +17,15 @@ def show():
     c1, c2, c3 = st.columns([1, 2.5, 1])
     
     with c2:
-        # 🚨 THE ULTIMATE CENTERING FIX 🚨
-        # Bundles the logo, title, and subtitle into ONE unbreakable flexbox column
+        # 🚨 THE MANUAL NUDGE FIX 🚨
         try:
             with open("nync_marketing.png", "rb") as f: 
                 img_data = base64.b64encode(f.read()).decode()
             
+            # Added "transform: translateX(-12px);" to perfectly center the lightning bolt
             st.markdown(f"""
                 <div style='display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; text-align: center;'>
-                    <img src='data:image/png;base64,{img_data}' style='width: 140px; filter: brightness(0) invert(1); margin-bottom: 0px;'>
+                    <img src='data:image/png;base64,{img_data}' style='width: 140px; filter: brightness(0) invert(1); margin-bottom: 0px; transform: translateX(-12px);'>
                     <h1 style='margin: 0px; padding: 0px; font-size: 2.5rem;'>Nync</h1>
                     <p style='color: #888; font-size: 13px; margin: 0px 0px 10px 0px;'>Stop maximizing convenience. Start minimizing pain.</p>
                 </div>
