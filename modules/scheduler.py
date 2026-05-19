@@ -72,25 +72,27 @@ def fetch_all_conflicts(supabase, roster, start_date, days):
     return conflicts_dict
 
 @st.cache_data(ttl=600, show_spinner=False)
-def build_heatmap_dataframe(target_date, roster):
-    """Builds the visual heatmap data."""
+def build_heatmap_dataframe(target_date, roster, conflicts_dict=None):
+    if conflicts_dict is None: conflicts_dict = {}
     data = []
-    utc_hours = list(range(24))
-    for h in utc_hours:
+    for h in range(24):
         display_time = f"{h:02d}:00 UTC"
         for member in roster:
             name = member.get('name', 'Unknown')
             tz = member.get('tz', 'UTC')
-            
-            # PULL PERSONAL HOURS!
             w_start = member.get('work_start', 9)
             w_end = member.get('work_end', 17)
-            
+            uid = str(member.get('user_id', ''))
             pain = calculate_local_pain(target_date, h, tz, w_start, w_end)
-            
+            slot_str = dt.datetime.combine(target_date, dt.time(hour=h)).isoformat()
+            event_title = "Clear"
+            if uid in conflicts_dict and slot_str in conflicts_dict[uid]:
+                pain += 25
+                event_title = conflicts_dict[uid][slot_str]
             data.append({
-                "Time": display_time, "Hour": h, 
-                "Member": name, "Pain Score": pain, "Local Timezone": tz
+                "Time": display_time, "Hour": h,
+                "Member": name, "Pain Score": pain, "Local Timezone": tz,
+                "Event": event_title
             })
     return pd.DataFrame(data)
 
@@ -271,7 +273,8 @@ def show(supabase, user, roster):
             st.rerun()
 
     with st.spinner("Loading Availability..."):
-        df = build_heatmap_dataframe(target_date, roster)
+        conflicts_dict = asyncio.run(gather_all_conflicts(roster, target_date, 1))
+        df = build_heatmap_dataframe(target_date, roster, conflicts_dict)
         time_sel = alt.selection_point(fields=['Time'], name="TimeSelect")
 
         heatmap = alt.Chart(df).mark_rect(cornerRadius=6).encode(
@@ -286,7 +289,8 @@ def show(supabase, user, roster):
                 alt.Tooltip('Member:N', title='Name'),
                 alt.Tooltip('Time:O', title='UTC Time'),
                 alt.Tooltip('Local Timezone:N', title='Timezone'),
-                alt.Tooltip('Pain Score:Q', title='Pain Score')
+                alt.Tooltip('Pain Score:Q', title='Pain Score'),
+                alt.Tooltip('Event:N', title='Status')
             ]
         ).add_params(time_sel).properties(
             height=120 + (len(roster) * 45),
