@@ -86,7 +86,6 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                         else:
                             st.info("No changes to save.")
                     
-                    # Only allow adding ghost members if under the limit
                     if current_members < MAX_MEMBERS:
                         st.markdown("---")
                         st.markdown("##### ➕ Add Dummy Member")
@@ -96,15 +95,35 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                             g_email = col2.text_input("Email", placeholder="(Optional)")
                             default_tz_index = ALL_TZS.index("UTC") if "UTC" in ALL_TZS else 0
                             g_tz = col3.selectbox("Timezone", ALL_TZS, index=default_tz_index)
-                            
                             if st.form_submit_button("Add Dummy"):
                                 if g_name:
                                     auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
                                     st.success("Dummy added!")
                                     time.sleep(0.5)
-                                    st.rerun(scope="fragment") 
+                                    st.rerun(scope="fragment")
                                 else:
                                     st.warning("Name is required.")
+
+                        st.markdown("---")
+                        st.markdown("##### 📨 Invite External Guest")
+                        with st.form(f"invite_guest_{selected_tid}", clear_on_submit=True):
+                            gc1, gc2 = st.columns(2)
+                            g_guest_name = gc1.text_input("Name", placeholder="Jane Doe", key=f"ign_{selected_tid}")
+                            g_guest_email = gc2.text_input("Email", placeholder="jane@client.com", key=f"ige_{selected_tid}")
+                            if st.form_submit_button("📨 Add as External Guest", type="primary", use_container_width=True):
+                                if g_guest_name and g_guest_email:
+                                    supabase.table('team_members').insert({
+                                        'team_id': selected_tid,
+                                        'ghost_name': g_guest_name.strip(),
+                                        'ghost_email': g_guest_email.strip(),
+                                        'role': 'guest'
+                                    }).execute()
+                                    auth.get_team_roster.clear()
+                                    st.success(f"✅ **{g_guest_name}** added as an external guest.")
+                                    time.sleep(0.5)
+                                    st.rerun(scope="fragment")
+                                else:
+                                    st.warning("Both name and email are required.")
         except Exception as e:
             st.error(f"Could not load roster: {e}")
 
