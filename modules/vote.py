@@ -4,8 +4,8 @@ from datetime import datetime
 
 @st.fragment
 def show(poll_id, supabase):
-    # --- 1. SECURITY CHECK ---
-    # User must be logged in to vote
+    poll_id = poll_id[0] if isinstance(poll_id, list) else poll_id
+
     if 'user' not in st.session_state or not st.session_state.user:
         st.warning("🔒 You must be logged in to vote.")
         st.info("Please refresh the page or go to the dashboard to sign in.")
@@ -14,13 +14,11 @@ def show(poll_id, supabase):
             st.rerun()
         return
 
-    # User is authenticated
     user_email = st.session_state.user.email
     st.title("🗳️ Cast Your Vote")
-    
-    # --- 2. FETCH POLL DATA ---
+
     try:
-        poll = supabase.table('polls').select('*').eq('id', poll_id).single().execute()
+        poll = supabase.table('polls').select('*').eq('id', poll_id).maybe_single().execute()
         if not poll.data:
             st.error("Poll not found.")
             return
@@ -29,9 +27,9 @@ def show(poll_id, supabase):
         if not options.data:
             st.error("No options found.")
             return
-            
+
     except Exception as e:
-        st.error("Error loading poll.")
+        st.error(f"Error loading poll: {e}")
         return
 
     # Assuming you are inside your poll loop and have access to `poll_id`

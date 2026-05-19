@@ -53,15 +53,13 @@ def show(supabase, poll_id):
             st.success("🎉 Your responses have been recorded. You can safely close this tab.")
             return
 
-        guest_tz_str = st.session_state.get('guest_tz', 'UTC')
-        guest_tz = pytz.timezone(guest_tz_str)
-
         _, col, _ = st.columns([1, 2, 1])
         with col:
-            st.caption(f"🌍 Times shown in **UTC**")
+            st.caption("🌍 Times shown in **UTC**")
             guest_name = st.text_input("Your Name", placeholder="e.g. Jane Doe")
+            guest_email = st.text_input("Your Email", placeholder="e.g. jane@company.com")
 
-            if guest_name:
+            if guest_name and guest_email:
                 opts_res = supabase.table('poll_options').select('id, slot_time').eq('poll_id', poll_id).order('slot_time').execute()
 
                 if not opts_res.data:
@@ -88,17 +86,15 @@ def show(supabase, poll_id):
 
                 st.write("")
                 if st.button("Submit Votes", type="primary", use_container_width=True):
-                    rows = [
-                        {
-                            'poll_option_id': opt_id,
-                            'voter_name': guest_name.strip(),
-                            'pain_score': RATING_PAIN[rating]
-                        }
-                        for opt_id, rating in ratings.items()
-                    ]
-                    supabase.table('votes').insert(rows).execute()
+                    for opt_id, rating in ratings.items():
+                        if rating != "❌ Painful":
+                            supabase.table('poll_votes').insert({
+                                'poll_id': poll_id,
+                                'option_id': opt_id,
+                                'voter_name': f"{guest_name.strip()} ({guest_email.strip()}) - {rating}"
+                            }).execute()
                     st.session_state.guest_voted = True
                     st.rerun()
 
     except Exception as e:
-        st.error("An error occurred loading the meeting details.")
+        st.error(f"An error occurred: {e}")
