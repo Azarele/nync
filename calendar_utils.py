@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 import requests
 import datetime as dt
@@ -22,9 +23,11 @@ def get_provider_token(user_id, provider):
 # --- MICROSOFT AUTH ---
 def get_microsoft_url(user_id):
     try:
-        client_id = st.secrets["microsoft"]["client_id"]
-        redirect_uri = st.secrets["microsoft"]["redirect_uri"]
-        authority = st.secrets["microsoft"]["authority"]
+        client_id = os.environ.get("MICROSOFT_CLIENT_ID", "")
+        redirect_uri = os.environ.get("MICROSOFT_REDIRECT_URI", "")
+        authority = os.environ.get("MICROSOFT_AUTHORITY", "https://login.microsoftonline.com/common")
+        if not client_id or not redirect_uri:
+            return "#"
         scope = "Calendars.ReadWrite offline_access User.Read"
         state = f"microsoft_connect:{user_id}"
         return (f"{authority}/oauth2/v2.0/authorize?client_id={client_id}&response_type=code&redirect_uri={redirect_uri}&response_mode=query&scope={scope}&state={state}")
@@ -32,14 +35,15 @@ def get_microsoft_url(user_id):
 
 def handle_microsoft_callback(code, user_id):
     try:
-        token_url = f"{st.secrets['microsoft']['authority']}/oauth2/v2.0/token"
+        authority = os.environ.get("MICROSOFT_AUTHORITY", "https://login.microsoftonline.com/common")
+        token_url = f"{authority}/oauth2/v2.0/token"
         payload = {
-            "client_id": st.secrets["microsoft"]["client_id"],
+            "client_id": os.environ.get("MICROSOFT_CLIENT_ID", ""),
             "scope": "Calendars.ReadWrite offline_access User.Read",
             "code": code,
-            "redirect_uri": st.secrets["microsoft"]["redirect_uri"],
+            "redirect_uri": os.environ.get("MICROSOFT_REDIRECT_URI", ""),
             "grant_type": "authorization_code",
-            "client_secret": st.secrets["microsoft"]["client_secret"],
+            "client_secret": os.environ.get("MICROSOFT_CLIENT_SECRET", ""),
         }
         r = requests.post(token_url, data=payload, timeout=10)
         tokens = r.json()
@@ -70,10 +74,11 @@ def refresh_outlook_token(user_id):
         if not record.data: return None
         refresh_token = record.data.get("refresh_token")
         
-        token_url = f"{st.secrets['microsoft']['authority']}/oauth2/v2.0/token"
+        authority = os.environ.get("MICROSOFT_AUTHORITY", "https://login.microsoftonline.com/common")
+        token_url = f"{authority}/oauth2/v2.0/token"
         payload = {
-            "client_id": st.secrets["microsoft"]["client_id"],
-            "client_secret": st.secrets["microsoft"]["client_secret"],
+            "client_id": os.environ.get("MICROSOFT_CLIENT_ID", ""),
+            "client_secret": os.environ.get("MICROSOFT_CLIENT_SECRET", ""),
             "refresh_token": refresh_token,
             "grant_type": "refresh_token",
             "scope": "Calendars.ReadWrite offline_access User.Read"
