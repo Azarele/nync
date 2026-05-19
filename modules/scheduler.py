@@ -255,13 +255,21 @@ def show(supabase, user, roster):
 
     team_id = st.session_state.get('active_team_id')
 
-    c_mag, c_date = st.columns([1, 2], vertical_alignment="bottom")
+    c_mag, c_date, c_sync = st.columns([1, 2, 1], vertical_alignment="bottom")
     with c_date:
         target_date = st.date_input("Select Target Date", dt.date.today() + dt.timedelta(days=1))
-    
+
     with c_mag:
         render_magic_suggest(supabase, team_id, roster, target_date)
-        
+
+    with c_sync:
+        if st.button("🔄 Sync Live Calendars", use_container_width=True):
+            build_heatmap_dataframe.clear()
+            get_best_slots.clear()
+            with st.spinner("Syncing live calendars..."):
+                time.sleep(0.5)
+            st.rerun()
+
     with st.spinner("Loading Availability..."):
         df = build_heatmap_dataframe(target_date, roster)
         time_sel = alt.selection_point(fields=['Time'], name="TimeSelect")
@@ -316,8 +324,6 @@ def show(supabase, user, roster):
                                     
                                     st.success(f"Poll created for {chosen_time}! Check the Pain Board.")
                                     notify_team(supabase, team_id, roster, target_date, chosen_time, total_pain)
-                                    
-                                    # FIX: FULL PAGE REFRESH TO UPDATE TABS
                                     time.sleep(1.2)
                                     st.rerun()
                                     
