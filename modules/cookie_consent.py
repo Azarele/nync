@@ -23,17 +23,18 @@ def cookie_dialog():
             st.rerun()
 
 def show(all_cookies):
-    # 1. TRUTH CHECK: Check Browser Cookies directly.
+    if 'cookie_buffer' not in st.session_state:
+        st.session_state.cookie_buffer = True
+        return
+
     val = all_cookies.get("nync_consent")
     if val in ["accepted", "declined"]:
         st.session_state.consent = val
         return
 
-    # 2. SESSION CHECK: If we just decided this session
     if st.session_state.get("consent") in ["accepted", "declined"]:
         return
 
-    # 3. SHOW DIALOG
     if not st.session_state.get("cookie_dialog_shown"):
         st.session_state.cookie_dialog_shown = True
         cookie_dialog()
