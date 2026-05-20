@@ -5,10 +5,12 @@ from db import supabase
 stripe.api_key = st.secrets.get("stripe", {}).get("secret_key", "")
 
 def get_user_tier(user_id):
+    valid_tiers = {'free', 'squad', 'guild', 'empire'}
     try:
         res = supabase.table('profiles').select('subscription_tier').eq('id', user_id).maybe_single().execute()
         if res and res.data:
-            return res.data.get('subscription_tier', 'free').lower()
+            tier = res.data.get('subscription_tier', 'free').lower()
+            return tier if tier in valid_tiers else 'free'
         return 'free'
     except:
         return 'free'

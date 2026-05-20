@@ -184,7 +184,7 @@ def render_magic_suggest(supabase, team_id, roster, target_date, user_id):
     user_tier = billing_utils.get_user_tier(user_id)
     if user_tier == 'free':
         st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True, disabled=True)
-        st.caption("🔒 Upgrade to Pro to unlock the AI Scheduling Engine.")
+        st.caption("🔒 Upgrade to any paid tier to unlock the AI Scheduling Engine.")
     else:
         if st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True):
             st.session_state.show_magic = not st.session_state.get('show_magic', False)
@@ -242,10 +242,8 @@ def render_magic_suggest(supabase, team_id, roster, target_date, user_id):
                                 st.success("✅ Poll Created! Check the Pain Board.")
                                 notify_team(supabase, team_id, roster, slot['date'], slot['time_str'], base_pain)
                                 st.session_state.show_magic = False
-                                
-                                # FIX: FULL PAGE REFRESH TO UPDATE TABS
-                                time.sleep(1.2) 
-                                st.rerun() 
+                                time.sleep(1.2)
+                                st.rerun()
         st.divider()
 
 

@@ -14,13 +14,11 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                 ALL_TZS = pytz.all_timezones
                 current_members = len(roster_data.data)
                 
-                MAX_MEMBERS = 3 if current_tier == 'free' else 20
+                TIER_LIMITS = {'free': 3, 'squad': 10, 'guild': 25, 'empire': 100}
+                MAX_MEMBERS = TIER_LIMITS.get(current_tier, 3)
 
                 if current_members >= MAX_MEMBERS:
-                    if current_tier == 'free':
-                        st.warning("🔒 **Free Tier Limit Reached** \n\nYou can only add up to 3 members on the free tier. Upgrade to Pro to unlock larger teams!")
-                    else:
-                        st.error(f"**Limit Reached.** Your {current_tier.upper()} plan allows {MAX_MEMBERS} members per team.")
+                    st.warning(f"🔒 **Tier Limit Reached** \nYou can only add up to {MAX_MEMBERS} members on your current plan. Upgrade to unlock larger teams!")
                     if st.button("🚀 Upgrade Plan", key=f"upg_mem_{selected_tid}", type="primary"):
                         st.session_state.nav = "Pricing"
                         st.rerun()
@@ -213,10 +211,11 @@ def show(user, supabase):
         except:
             current_members = 0
 
-        MAX_MEMBERS = 3 if user_tier == 'free' else 20
-        
+        TIER_LIMITS = {'free': 3, 'squad': 10, 'guild': 25, 'empire': 100}
+        MAX_MEMBERS = TIER_LIMITS.get(user_tier, 3)
+
         if current_members >= MAX_MEMBERS:
-            st.error(f"**Member Limit Reached ({MAX_MEMBERS}).**\nUpgrade your plan to invite more people.")
+            st.warning(f"🔒 **Tier Limit Reached** \nYou can only add up to {MAX_MEMBERS} members on your current plan. Upgrade to unlock larger teams!")
         else:
             st.caption("Invite Code")
             st.code(invite_code, language=None)
