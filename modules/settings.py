@@ -1,5 +1,6 @@
 import streamlit as st
 import auth_utils as auth
+import billing_utils
 import time
 
 @st.fragment
@@ -91,12 +92,11 @@ def show(user, supabase, cookie_manager):
     st.header("⚙️ Personal Settings")
     st.divider()
 
-    # 1. PROFILE SECTION (Full refresh required for billing)
     st.subheader("Profile")
     c1, c2 = st.columns([1, 2])
     with c1:
         st.write(f"**Email:** {user.email}")
-        
+
         profile = auth.get_user_profile(user.id)
         if profile:
             tier = profile.get('subscription_tier', 'free').upper()
@@ -105,12 +105,15 @@ def show(user, supabase, cookie_manager):
             if tier == "GUILD": color = "#1e90ff"
             if tier == "EMPIRE": color = "#9932cc"
             st.markdown(f"**Current Plan:** <span style='background-color:{color}; color:white; padding:2px 8px; border-radius:4px;'>{tier}</span>", unsafe_allow_html=True)
-    
+
     with c2:
         if st.button("Manage Subscription"):
-            portal_url = auth.create_stripe_portal_session(user.email)
-            if portal_url: st.link_button("Billing Portal", portal_url)
-            else: st.info("No billing history found.")
+            with st.spinner("Securely loading billing portal..."):
+                url = billing_utils.get_billing_portal_url(user.email)
+                if url:
+                    st.markdown(f'<meta http-equiv="refresh" content="0; url={url}">', unsafe_allow_html=True)
+                else:
+                    st.error("No active billing profile found. Please subscribe to a plan first.")
 
     st.divider()
 

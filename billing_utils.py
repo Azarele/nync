@@ -15,6 +15,20 @@ def get_user_tier(user_id):
     except:
         return 'free'
 
+def get_billing_portal_url(user_email):
+    stripe.api_key = st.secrets["stripe"]["secret_key"]
+    try:
+        customers = stripe.Customer.list(email=user_email, limit=1)
+        if customers.data:
+            session = stripe.billing_portal.Session.create(
+                customer=customers.data[0].id,
+                return_url="https://nync.app/"
+            )
+            return session.url
+        return None
+    except:
+        return None
+
 def create_stripe_portal_session(user_email):
     if not stripe.api_key: return None
     try:
