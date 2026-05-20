@@ -3,7 +3,6 @@ import auth_utils as auth
 import time
 import pytz
 
-# --- FRAGMENT 1: The Team Roster ---
 @st.fragment
 def render_roster(user, supabase, selected_tid, my_role, current_tier):
     with st.expander("👥 Team Roster & Timezones", expanded=True):
@@ -55,10 +54,10 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                             
                         if m_user_id != user.id:
                             if c3.button("Kick", key=f"kick_{row_id}", type="secondary", use_container_width=True):
-                                if auth.remove_team_member_by_row(row_id, selected_tid, user.id):
+                                if auth.remove_team_member(row_id):
                                     st.toast(f"Removed member.")
                                     time.sleep(0.5)
-                                    st.rerun() 
+                                    st.rerun()
                     else:
                         c2.write(f"🌍 {m_tz}")
                 
