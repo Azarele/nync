@@ -1,9 +1,20 @@
 import streamlit as st
 import stripe
+from db import supabase
+
+stripe.api_key = st.secrets.get("stripe", {}).get("secret_key", "")
+
+def get_user_tier(user_id):
+    try:
+        res = supabase.table('profiles').select('subscription_tier').eq('id', user_id).maybe_single().execute()
+        if res and res.data:
+            return res.data.get('subscription_tier', 'free').lower()
+        return 'free'
+    except:
+        return 'free'
 
 def create_stripe_portal_session(user_email):
-    if "stripe" not in st.secrets: return None
-    stripe.api_key = st.secrets["stripe"]["secret_key"]
+    if not stripe.api_key: return None
     try:
         customers = stripe.Customer.list(email=user_email, limit=1)
         if not customers.data: return None
@@ -14,8 +25,7 @@ def create_stripe_portal_session(user_email):
     except: return None
 
 def verify_stripe_payment(session_id):
-    if "stripe" not in st.secrets: return None
-    stripe.api_key = st.secrets["stripe"]["secret_key"]
+    if not stripe.api_key: return None
     try:
         session = stripe.checkout.Session.retrieve(session_id)
         if session.payment_status == 'paid':
@@ -24,11 +34,9 @@ def verify_stripe_payment(session_id):
     except: return None
 
 def create_stripe_checkout(user_email, price_id, success_url=None, cancel_url=None):
-    if "stripe" not in st.secrets: return None
-    stripe.api_key = st.secrets["stripe"]["secret_key"]
-    base_url = "https://nync.app/"
-    if not success_url: success_url = f"{base_url}/?stripe_session_id={{CHECKOUT_SESSION_ID}}"
-    if not cancel_url: cancel_url = f"{base_url}/?nav=Pricing"
+    if not stripe.api_key: return None
+    if not success_url: success_url = "https://nync.app/?session_id={CHECKOUT_SESSION_ID}"
+    if not cancel_url: cancel_url = "https://nync.app/"
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=['card'],

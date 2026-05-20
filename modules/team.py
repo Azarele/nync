@@ -1,5 +1,6 @@
 import streamlit as st
 import auth_utils as auth
+import billing_utils
 import time
 import pytz
 
@@ -13,10 +14,13 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                 ALL_TZS = pytz.all_timezones
                 current_members = len(roster_data.data)
                 
-                MAX_MEMBERS = 5 if current_tier == 'free' else (10 if current_tier == 'squad' else (50 if current_tier == 'guild' else 9999))
-                
+                MAX_MEMBERS = 3 if current_tier == 'free' else 20
+
                 if current_members >= MAX_MEMBERS:
-                    st.error(f"**Limit Reached.** Your {current_tier.upper()} plan allows {MAX_MEMBERS} members per team.")
+                    if current_tier == 'free':
+                        st.warning("🔒 **Free Tier Limit Reached** \n\nYou can only add up to 3 members on the free tier. Upgrade to Pro to unlock larger teams!")
+                    else:
+                        st.error(f"**Limit Reached.** Your {current_tier.upper()} plan allows {MAX_MEMBERS} members per team.")
                     if st.button("🚀 Upgrade Plan", key=f"upg_mem_{selected_tid}", type="primary"):
                         st.session_state.nav = "Pricing"
                         st.rerun()
@@ -139,9 +143,8 @@ def show(user, supabase):
     st.header("🛡️ Team Headquarters")
     st.divider()
 
-    # Look up billing tier once
-    profile = auth.get_user_profile(user.id)
-    tier = profile.get('subscription_tier', 'free').lower() if profile else 'free'
+    user_tier = billing_utils.get_user_tier(user.id)
+    tier = user_tier
     MAX_TEAMS = 1 if tier in ['free', 'squad'] else 999
     
     my_teams = auth.get_user_teams(user.id)
@@ -150,7 +153,6 @@ def show(user, supabase):
     c_create, c_join = st.columns(2)
     with c_create:
         with st.expander("➕ Create a New Team"):
-            # --- BILLING: ENFORCE TEAM LIMITS ---
             if my_teams and len(my_teams) >= MAX_TEAMS:
                 st.error(f"**Limit Reached.** Your {tier.upper()} plan allows {MAX_TEAMS} team(s).")
                 if st.button("🚀 Upgrade to Guild", key="upg_team", type="primary"):
@@ -205,14 +207,13 @@ def show(user, supabase):
     c_code, c_settings = st.columns([1, 2])
     
     with c_code:
-        # Hide the invite code entirely if they are over the member limit!
         try:
             roster_check = supabase.table('team_members').select('id', count='exact').eq('team_id', selected_tid).execute()
             current_members = roster_check.count
         except:
             current_members = 0
-            
-        MAX_MEMBERS = 5 if tier == 'free' else (10 if tier == 'squad' else (50 if tier == 'guild' else 9999))
+
+        MAX_MEMBERS = 3 if user_tier == 'free' else 20
         
         if current_members >= MAX_MEMBERS:
             st.error(f"**Member Limit Reached ({MAX_MEMBERS}).**\nUpgrade your plan to invite more people.")
@@ -225,8 +226,7 @@ def show(user, supabase):
             st.code(invite_link, language=None)
         
     with c_settings:
-        # Load our hyper-fast fragments, passing the tier down to enforce limits!
-        render_roster(user, supabase, selected_tid, my_role, tier)
+        render_roster(user, supabase, selected_tid, my_role, user_tier)
         
         if my_role == 'admin':
             render_webhooks(supabase, selected_tid, webhook)

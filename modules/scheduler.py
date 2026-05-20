@@ -5,7 +5,8 @@ import pandas as pd
 import altair as alt
 import requests
 import calendar_utils as cal
-import email_utils 
+import email_utils
+import billing_utils
 import time
 import asyncio
 from async_calendar_utils import gather_all_conflicts
@@ -179,10 +180,15 @@ def notify_team(supabase, team_id, roster, target_date, chosen_time, total_pain)
 # ==========================================
 
 @st.fragment
-def render_magic_suggest(supabase, team_id, roster, target_date):
-    if st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True):
-        st.session_state.show_magic = not st.session_state.get('show_magic', False)
-        st.rerun(scope="fragment")
+def render_magic_suggest(supabase, team_id, roster, target_date, user_id):
+    user_tier = billing_utils.get_user_tier(user_id)
+    if user_tier == 'free':
+        st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True, disabled=True)
+        st.caption("🔒 Upgrade to Pro to unlock the AI Scheduling Engine.")
+    else:
+        if st.button("✨ Auto-Find Best Times", type="primary", use_container_width=True):
+            st.session_state.show_magic = not st.session_state.get('show_magic', False)
+            st.rerun(scope="fragment")
 
     if st.session_state.get('show_magic', False):
         st.markdown("#### 🎯 Top 3 Suggested Slots")
@@ -262,7 +268,7 @@ def show(supabase, user, roster):
         target_date = st.date_input("Select Target Date", dt.date.today() + dt.timedelta(days=1))
 
     with c_mag:
-        render_magic_suggest(supabase, team_id, roster, target_date)
+        render_magic_suggest(supabase, team_id, roster, target_date, user.id)
 
     with c_sync:
         if st.button("🔄 Sync Live Calendars", use_container_width=True):

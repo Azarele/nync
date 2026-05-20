@@ -79,16 +79,15 @@ def show():
                 start_checkout(PRICE_EMPIRE)
 
 def start_checkout(price_id):
-    """Helper to initiate Stripe flow"""
     if 'user' not in st.session_state or not st.session_state.user:
         st.error("Please log in first.")
         return
-        
+
     url = auth.create_stripe_checkout(
-        st.session_state.user.email, 
+        st.session_state.user.email,
         price_id,
-        success_url="https://nync.app/?stripe_session_id={CHECKOUT_SESSION_ID}",
-        cancel_url="https://nync.app/?stripe_cancel=true"
+        success_url="https://nync.app/?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url="https://nync.app/"
     )
 
     if url:
