@@ -1,9 +1,9 @@
 import streamlit as st
 import billing_utils
 
-PRICE_SQUAD = "price_squad_dummy"
-PRICE_GUILD = "price_guild_dummy"
-PRICE_EMPIRE = "price_empire_dummy"
+PRICE_SQUAD = "price_1Smm9VIlTLkLyuizLNG57F1g"
+PRICE_GUILD = "price_1SmmATIlTLkLyuizW9PcnZrN"
+PRICE_EMPIRE = "price_1SmmB0IlTLkLyuiz6xySQvqd"
 
 def show():
     st.header("💎 Upgrade Your Team")
