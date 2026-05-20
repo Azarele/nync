@@ -14,7 +14,6 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                 ALL_TZS = pytz.all_timezones
                 current_members = len(roster_data.data)
                 
-                # --- BILLING: ENFORCE MEMBER LIMITS ---
                 MAX_MEMBERS = 5 if current_tier == 'free' else (10 if current_tier == 'squad' else (50 if current_tier == 'guild' else 9999))
                 
                 if current_members >= MAX_MEMBERS:
@@ -59,7 +58,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                                 if auth.remove_team_member_by_row(row_id, selected_tid, user.id):
                                     st.toast(f"Removed member.")
                                     time.sleep(0.5)
-                                    st.rerun(scope="fragment") 
+                                    st.rerun() 
                     else:
                         c2.write(f"🌍 {m_tz}")
                 
@@ -82,7 +81,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                         if changes_made:
                             st.success("Timezones updated successfully!")
                             time.sleep(0.5)
-                            st.rerun(scope="fragment") 
+                            st.rerun() 
                         else:
                             st.info("No changes to save.")
                     
@@ -97,10 +96,11 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                             g_tz = col3.selectbox("Timezone", ALL_TZS, index=default_tz_index)
                             if st.form_submit_button("Add Dummy"):
                                 if g_name:
-                                    auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
-                                    st.success("Dummy added!")
-                                    time.sleep(0.5)
-                                    st.rerun(scope="fragment")
+                                    success = auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
+                                    if success:
+                                        st.success("Dummy added!")
+                                        time.sleep(0.5)
+                                        st.rerun()
                                 else:
                                     st.warning("Name is required.")
 
@@ -121,7 +121,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                                     auth.get_team_roster.clear()
                                     st.success(f"✅ **{g_guest_name}** added as an external guest.")
                                     time.sleep(0.5)
-                                    st.rerun(scope="fragment")
+                                    st.rerun()
                                 else:
                                     st.warning("Both name and email are required.")
         except Exception as e:

@@ -173,7 +173,7 @@ def add_ghost_member(team_id, name, email, timezone, current_user_id):
         get_team_roster.clear()
         return True
     except Exception as e:
-        print(f"Error adding ghost: {e}")
+        st.error(f"Database error: {e}")
         return False
 
 def update_member_timezone(row_id, user_id, new_timezone, is_ghost):
