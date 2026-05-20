@@ -1,5 +1,6 @@
 import streamlit as st
 import time
+import threading
 import base64
 import supabase
 import html
@@ -7,13 +8,28 @@ import auth_utils as auth
 import extra_streamlit_components as stx
 from modules import login, martyr_board, scheduler, settings, pricing, legal, vote, guide, cookie_consent, onboarding, team
 import datetime as dt
+import cron_worker
 
-# 1. SETUP
 try:
     st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
 except: pass
 
-# --- 🚨 INTERCEPT EXTERNAL GUEST LINKS ---
+@st.cache_resource
+def start_background_worker():
+    def cron_loop():
+        while True:
+            try:
+                cron_worker.refresh_all_tokens()
+                cron_worker.close_expired_polls()
+            except Exception:
+                pass
+            time.sleep(3600)
+    threading.Thread(target=cron_loop, daemon=True).start()
+    return True
+
+start_background_worker()
+
+
 if "guest_poll" in st.query_params:
     poll_id = st.query_params["guest_poll"]
     from modules import guest_vote

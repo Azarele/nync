@@ -34,10 +34,3 @@ def close_expired_polls():
     except Exception as e:
         print(f"close_expired_polls error: {e}")
 
-
-if __name__ == "__main__":
-    print("cron_worker started.")
-    while True:
-        refresh_all_tokens()
-        close_expired_polls()
-        time.sleep(3600)
