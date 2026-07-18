@@ -2,6 +2,14 @@ import streamlit as st
 import auth_utils as auth
 import base64
 
+@st.cache_resource
+def _get_logo_b64():
+    try:
+        with open('nync_marketing.png', 'rb') as f:
+            return base64.b64encode(f.read()).decode()
+    except:
+        return None
+
 def show():
     # --- UI COMPRESSION CSS ---
     st.markdown("""
@@ -18,11 +26,8 @@ def show():
     
     with c2:
         # 🚨 THE MANUAL NUDGE FIX 🚨
-        try:
-            with open("nync_marketing.png", "rb") as f: 
-                img_data = base64.b64encode(f.read()).decode()
-            
-            # Added "transform: translateX(-12px);" to perfectly center the lightning bolt
+        img_data = _get_logo_b64()
+        if img_data:
             st.markdown(f"""
                 <div style='display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; text-align: center;'>
                     <img src='data:image/png;base64,{img_data}' style='width: 140px; filter: brightness(0) invert(1); margin-bottom: 0px; transform: translateX(-12px);'>
@@ -30,7 +35,7 @@ def show():
                     <p style='color: #888; font-size: 13px; margin: 0px 0px 10px 0px;'>Stop maximizing convenience. Start minimizing pain.</p>
                 </div>
             """, unsafe_allow_html=True)
-        except:
+        else:
             st.markdown("<h1 style='text-align: center; margin:0;'>⚡ Nync</h1>", unsafe_allow_html=True)
         
         # 2. TIGHTER GOOGLE COMPLIANCE TEXT

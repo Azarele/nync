@@ -58,7 +58,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                             if c3.button("Kick", key=f"kick_{row_id}", type="secondary", use_container_width=True):
                                 if auth.remove_team_member(row_id):
                                     st.toast(f"Removed member.")
-                                    time.sleep(0.5)
+                                    time.sleep(0.2)
                                     st.rerun()
                     else:
                         c2.write(f"🌍 {m_tz}")
@@ -81,7 +81,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                         
                         if changes_made:
                             st.success("Timezones updated successfully!")
-                            time.sleep(0.5)
+                            time.sleep(0.2)
                             st.rerun() 
                         else:
                             st.info("No changes to save.")
@@ -100,7 +100,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                                     success = auth.add_ghost_member(selected_tid, g_name, g_email, g_tz, user.id)
                                     if success:
                                         st.success("Dummy added!")
-                                        time.sleep(0.5)
+                                        time.sleep(0.2)
                                         st.rerun()
                                 else:
                                     st.warning("Name is required.")
@@ -121,7 +121,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                                     }).execute()
                                     auth.get_team_roster.clear()
                                     st.success(f"✅ **{g_guest_name}** added as an external guest.")
-                                    time.sleep(0.5)
+                                    time.sleep(0.2)
                                     st.rerun()
                                 else:
                                     st.warning("Both name and email are required.")

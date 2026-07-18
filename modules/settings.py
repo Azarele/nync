@@ -68,7 +68,7 @@ def render_working_hours(user, supabase, profile):
                 if hasattr(auth.get_team_roster, 'clear'): auth.get_team_roster.clear()
                     
                 st.success("Hours saved!")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 st.rerun(scope="fragment")
 
 @st.fragment
@@ -84,7 +84,7 @@ def render_privacy_preferences():
             if st.form_submit_button("Save Preferences"):
                 st.session_state.save_consent_val = "accepted" if new_consent else "declined"
                 st.success("Preferences Saved!")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 st.rerun(scope="fragment")
 
 

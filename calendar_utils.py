@@ -46,11 +46,15 @@ def handle_microsoft_callback(code, user_id):
         
         if "access_token" not in tokens: return False
             
+        import datetime as _dt
+        exp_secs = tokens.get("expires_in", 3600)
+        expires_at = (_dt.datetime.utcnow() + _dt.timedelta(seconds=exp_secs)).isoformat()
         data = {
             "user_id": user_id, "provider": "outlook",
-            "access_token": tokens["access_token"], 
+            "access_token": tokens["access_token"],
             "refresh_token": tokens.get("refresh_token"),
-            "expires_in": tokens.get("expires_in")
+            "expires_in": exp_secs,
+            "expires_at": expires_at
         }
         
         try:
@@ -82,10 +86,14 @@ def refresh_outlook_token(user_id):
         new_tokens = r.json()
         if "access_token" not in new_tokens: return None
             
+        import datetime as _dt
+        exp_secs = new_tokens.get("expires_in", 3600)
+        expires_at = (_dt.datetime.utcnow() + _dt.timedelta(seconds=exp_secs)).isoformat()
         supabase.table("calendar_connections").update({
             "access_token": new_tokens["access_token"],
             "refresh_token": new_tokens.get("refresh_token", refresh_token),
-            "expires_in": new_tokens.get("expires_in")
+            "expires_in": exp_secs,
+            "expires_at": expires_at
         }).eq("user_id", user_id).execute()
         return new_tokens["access_token"]
     except: return None
@@ -206,12 +214,15 @@ def save_google_token(user_id, session):
         if existing.data and not ref_token:
             ref_token = existing.data[0].get("refresh_token")
 
+        import datetime as _dt
+        expires_at = (_dt.datetime.utcnow() + _dt.timedelta(seconds=3599)).isoformat()
         data = {
-            "user_id": user_id, 
+            "user_id": user_id,
             "provider": "google",
             "access_token": session.provider_token,
-            "refresh_token": ref_token, 
-            "expires_in": 3599 
+            "refresh_token": ref_token,
+            "expires_in": 3599,
+            "expires_at": expires_at
         }
 
         if existing.data:
@@ -248,9 +259,13 @@ def refresh_google_token(user_id):
         if "access_token" not in new_tokens: 
             return None
         
+        import datetime as _dt
+        exp_secs = new_tokens.get("expires_in", 3599)
+        expires_at = (_dt.datetime.utcnow() + _dt.timedelta(seconds=exp_secs)).isoformat()
         supabase.table("calendar_connections").update({
             "access_token": new_tokens["access_token"],
-            "expires_in": new_tokens.get("expires_in", 3599)
+            "expires_in": exp_secs,
+            "expires_at": expires_at
         }).eq("user_id", user_id).eq("provider", "google").execute()
         
         return new_tokens["access_token"]

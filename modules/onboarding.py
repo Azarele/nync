@@ -28,7 +28,7 @@ def show(user, supabase, has_cal, has_teams):
                     auth.get_user_profile.clear()
                     
                 st.toast(f"🌍 Auto-detected your timezone: {client_tz}", icon="✅")
-                time.sleep(0.5)
+                time.sleep(0.2)
                 st.rerun() # Immediately refresh to lock in the timezone and remove the JS evaluation
     except Exception as e:
         pass # Fail silently so onboarding is never blocked
@@ -83,7 +83,7 @@ def show(user, supabase, has_cal, has_teams):
                             if new_team_name:
                                 if auth.create_team(user.id, new_team_name):
                                     st.success("Team created!")
-                                    time.sleep(0.5)
+                                    time.sleep(0.2)
                                     st.rerun()
                             else:
                                 st.warning("Please enter a name.")
@@ -94,7 +94,7 @@ def show(user, supabase, has_cal, has_teams):
                         if code:
                             if auth.join_team_by_code(user.id, code):
                                 st.success("Joined team!")
-                                time.sleep(0.5)
+                                time.sleep(0.2)
                                 st.rerun()
                             else:
                                 st.error("Invalid or expired invite code.")

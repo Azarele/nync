@@ -66,6 +66,7 @@ def get_team_roster(team_id):
         st.error(f"🚨 DATABASE ERROR: {e}") # This will print the exact issue on your dashboard!
         return []
 
+@st.cache_data(ttl=120)
 def check_team_status(team_id):
     try:
         team = supabase.table('teams').select('trial_ends_at, created_by').eq('id', team_id).single().execute()

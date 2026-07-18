@@ -10,6 +10,14 @@ from modules import login, martyr_board, scheduler, settings, pricing, legal, vo
 import datetime as dt
 import cron_worker
 
+@st.cache_resource
+def _get_logo_b64():
+    try:
+        with open('nync_marketing.png', 'rb') as f:
+            return base64.b64encode(f.read()).decode()
+    except:
+        return None
+
 try:
     st.set_page_config(page_title="Nync", page_icon="nync_favicon.png", layout="wide", initial_sidebar_state="collapsed")
 except: pass
@@ -191,13 +199,13 @@ if is_loading:
             if session: st.session_state.session, st.session_state.user, st.session_state.sync_cookies = session, session.user, True 
             else: st.session_state.clear_cookies = True 
         else: st.session_state.clear_cookies = True
-        time.sleep(0.5); st.rerun()
+        time.sleep(0.2); st.rerun()
     elif st.session_state.clear_cookies:
         st.session_state.clear_cookies = False
         t_key = str(time.time()).replace(".", "")
         try: cookie_manager.delete("sb_access_token", key=f"del_acc_{t_key}"); cookie_manager.delete("sb_refresh_token", key=f"del_ref_{t_key}")
         except: pass
-        time.sleep(0.8); st.rerun()
+        time.sleep(0.2); st.rerun()
     elif st.session_state.sync_cookies:
         st.session_state.sync_cookies = False
         if st.session_state.session:
@@ -205,7 +213,7 @@ if is_loading:
             t_key = str(time.time()).replace(".", "")
             cookie_manager.set("sb_access_token", st.session_state.session.access_token, expires_at=expires, key=f"set_acc_{t_key}")
             cookie_manager.set("sb_refresh_token", st.session_state.session.refresh_token, expires_at=expires, key=f"set_ref_{t_key}")
-        time.sleep(0.8); st.rerun()
+        time.sleep(0.2); st.rerun()
     elif st.session_state.save_consent_val:
         val = st.session_state.save_consent_val
         st.session_state.save_consent_val = None
@@ -213,7 +221,7 @@ if is_loading:
         t_key = str(time.time()).replace(".", "")
         cookie_manager.set("nync_consent", val, expires_at=expires, key=f"set_cons_{t_key}")
         st.session_state.consent = val
-        time.sleep(0.8); st.rerun()
+        time.sleep(0.2); st.rerun()
     st.stop()
 
 # =====================================================================
@@ -222,13 +230,16 @@ if is_loading:
 if "stripe_session_id" in st.query_params and st.session_state.user:
     price_id = auth.verify_stripe_payment(st.query_params["stripe_session_id"])
     if price_id:
-        new_tier = "paid" 
-        if price_id == "price_1Smm9VIlTLkLyuizLNG57F1g": new_tier = "squad"
-        elif price_id == "price_1SmmATIlTLkLyuizW9PcnZrN": new_tier = "guild"
-        elif price_id == "price_1SmmB0IlTLkLyuiz6xySQvqd": new_tier = "empire"
+        stripe_cfg = st.secrets.get("stripe", {})
+        PRICE_TO_TIER = {
+            stripe_cfg.get("price_squad", "price_1Smm9VIlTLkLyuizLNG57F1g"): "squad",
+            stripe_cfg.get("price_guild", "price_1SmmATIlTLkLyuizW9PcnZrN"): "guild",
+            stripe_cfg.get("price_empire", "price_1SmmB0IlTLkLyuiz6xySQvqd"): "empire",
+        }
+        new_tier = PRICE_TO_TIER.get(price_id, "squad")
         auth.upgrade_user_tier(st.session_state.user.id, new_tier)
         st.toast("🎉 Plan Updated!")
-        time.sleep(2)
+        time.sleep(0.2)
     st.query_params.clear(); st.rerun()
 
 cookie_consent.show(cookies)
@@ -254,7 +265,7 @@ else:
         else: st.toast("❌ Invalid Invite Code")
         del st.session_state.pending_invite
         if "invite" in st.query_params: st.query_params.clear()
-        time.sleep(1); st.rerun()
+        time.sleep(0.2); st.rerun()
 
     if "vote" in st.query_params: vote.show(st.query_params["vote"], auth.supabase); st.stop()
         
@@ -268,11 +279,10 @@ else:
     c_logo, c_nav, c_user = st.columns([1, 7, 1.2], vertical_alignment="center")
     
     with c_logo:
-        try:
-            with open("nync_marketing.png", "rb") as f: img_data = base64.b64encode(f.read()).decode()
-            # 🚨 APPLIED THE WHITE-LOGO FILTER TO THE INNER NAVBAR TOO 🚨
+        img_data = _get_logo_b64()
+        if img_data:
             st.markdown(f"<a href='/' target='_self'><img src='data:image/png;base64,{img_data}' width='65' style='cursor:pointer; filter: brightness(0) invert(1);'></a>", unsafe_allow_html=True)
-        except:
+        else:
             if st.button("⚡ Nync.", type="secondary"): st.session_state.nav = "Dashboard"; st.rerun()
 
     with c_nav:

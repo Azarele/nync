@@ -186,7 +186,7 @@ def show(supabase, team_id):
                                     st.warning(f"⚠️ Booking via {actual_provider.capitalize()} failed (Check your connection settings).")
 
                             supabase.table('polls').update({'status': 'closed'}).eq('id', p['id']).execute()
-                            time.sleep(1)
+                            time.sleep(0.2)
                             st.rerun()
 
                 st.write("")

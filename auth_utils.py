@@ -52,8 +52,14 @@ def delete_user_data(user_id):
         supabase.table('calendar_connections').delete().eq('user_id', user_id).execute()
         supabase.table('team_members').delete().eq('user_id', user_id).execute()
         supabase.table('profiles').delete().eq('id', user_id).execute()
+        try:
+            supabase.auth.admin.delete_user(user_id)
+        except Exception as e:
+            print(f"[nync] Could not delete auth user {user_id}: {e}")
         return True
-    except: return False
+    except Exception as e:
+        print(f"[nync] delete_user_data error: {e}")
+        return False
 
 def upgrade_user_tier(user_id, tier_name):
     try:
