@@ -80,9 +80,20 @@ st.markdown("""
     .main .block-container {
         animation: slideUpFade 0.5s ease-out forwards;
         padding-top: 0rem !important;
-        margin-top: -100px !important;
+        margin-top: -55px !important;
         padding-bottom: 5rem !important;
         max-width: 1200px;
+    }
+
+    /* Target Streamlit 1.45 main container padding */
+    [data-testid="stMainBlockContainer"] {
+        padding-top: 0rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+    }
+
+    section[data-testid="stMain"] {
+        padding-top: 0 !important;
     }
     
     /* Beautiful Interactive Buttons */
