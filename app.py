@@ -60,17 +60,23 @@ st.markdown("""
         color: #f4f4f5; 
     } 
     
-    /* 🚨 SCORCHED EARTH TOP GAP REMOVAL 🚨 */
+    /* Hide Streamlit header completely */
     header { visibility: hidden !important; display: none !important; height: 0px !important; }
     .stApp > header { display: none !important; }
-    [data-testid="stHeader"], [data-testid="stToolbar"], [data-testid="stSidebar"], [data-testid="stSidebarCollapsedControl"], [data-testid="stHeaderAction"] { display: none !important; }
-    
+    [data-testid="stHeader"] { display: none !important; height: 0px !important; }
+    [data-testid="stToolbar"] { display: none !important; height: 0px !important; }
+    [data-testid="stSidebar"] { display: none !important; }
+    [data-testid="stSidebarCollapsedControl"] { display: none !important; }
+    [data-testid="stHeaderAction"] { display: none !important; }
+    #root > div:first-child { height: 0px !important; }
+    .stApp > div:first-child > div:first-child { padding-top: 0 !important; }
+
     .main .block-container {
         animation: slideUpFade 0.5s ease-out forwards;
         padding-top: 0rem !important;
-        margin-top: -70px !important;  /* Forcefully pulls the entire app to the absolute top edge! */
+        margin-top: -70px !important;
         padding-bottom: 5rem !important;
-        max-width: 1200px; /* Keeps the UI tight and readable */
+        max-width: 1200px;
     }
     
     /* Beautiful Interactive Buttons */
