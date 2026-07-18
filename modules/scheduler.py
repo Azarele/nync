@@ -88,9 +88,15 @@ def build_heatmap_dataframe(target_date, roster_json, conflicts_json):
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def get_best_slots(roster_json, start_date, days=7, conflicts_json="{}"):
+def get_best_slots(roster_json, start_date, days=7, conflicts_json="{}", history_json="{}"):
+    """
+    Magic Algorithm: Finds the 3 lowest-pain slots weighted by historical karma.
+    Slots are ranked by: no conflicts > smallest lifetime fairness gap > lowest immediate pain.
+    history_json: JSON dict of {email: cumulative_pain_score}
+    """
     roster = json.loads(roster_json)
     conflicts_dict = json.loads(conflicts_json)
+    history_map = json.loads(history_json)
     best_slots = []
 
     for day_offset in range(days):
@@ -100,25 +106,39 @@ def get_best_slots(roster_json, start_date, days=7, conflicts_json="{}"):
             slot_str = slot_dt_naive.isoformat()
             total_pain = 0
             conflict_count = 0
+            lifetime_balances = []
+
             for m in roster:
                 w_start = m.get('work_start', 9)
                 w_end = m.get('work_end', 17)
+                email = m.get('email', '')
                 pain = calculate_local_pain(current_date, h, m.get('tz', 'UTC'), w_start, w_end)
                 uid = m.get('user_id')
+
                 if uid and str(uid) in conflicts_dict:
                     if slot_str in conflicts_dict[str(uid)]:
                         pain += 25
                         conflict_count += 1
+
                 total_pain += pain
+                # Karma: project what this person's lifetime total would be after this meeting
+                projected = history_map.get(email, 0) + pain
+                lifetime_balances.append(projected)
+
+            # Fairness gap: difference between most and least pained member (lifetime)
+            fairness_gap = (max(lifetime_balances) - min(lifetime_balances)) if lifetime_balances else 0
+
             best_slots.append({
                 'date': current_date,
                 'hour': h,
                 'time_str': f"{h:02d}:00 UTC",
                 'total_pain': total_pain,
-                'conflicts': conflict_count
+                'conflicts': conflict_count,
+                'fairness_gap': fairness_gap,
             })
 
-    best_slots.sort(key=lambda x: (x['total_pain'], x['date']))
+    # Sort: fewest conflicts first, then fairest (smallest gap), then lowest immediate pain
+    best_slots.sort(key=lambda x: (x['conflicts'] > 0, x['fairness_gap'], x['total_pain']))
     return best_slots[:3]
 
 
@@ -201,7 +221,17 @@ def render_magic_suggest(supabase, team_id, roster, target_date, user_id):
 
             roster_json = json.dumps(roster, default=str)
             conflicts_json = json.dumps(conflicts_dict, default=str)
-            top_slots = get_best_slots(roster_json, target_date, days_to_scan, conflicts_json)
+            # Build history map from pain_ledger for karma-aware suggestions
+            history_map = {}
+            try:
+                ledger = supabase.table('pain_ledger').select('user_email, pain_score').eq('team_id', team_id).execute()
+                for row in ledger.data:
+                    e = row['user_email']
+                    history_map[e] = history_map.get(e, 0) + row['pain_score']
+            except Exception:
+                pass
+            history_json = json.dumps(history_map, default=str)
+            top_slots = get_best_slots(roster_json, target_date, days_to_scan, conflicts_json, history_json)
             cols = st.columns(3)
 
             for i, slot in enumerate(top_slots):
@@ -218,6 +248,11 @@ def render_magic_suggest(supabase, team_id, roster, target_date, user_id):
                             st.success("✅ Clear Calendars")
                         base_pain = slot['total_pain'] - (slot['conflicts'] * 25)
                         st.caption(f"🔥 Base Pain: **{base_pain}**")
+                        gap = slot.get('fairness_gap', 0)
+                        if gap == 0:
+                            st.caption("⚖️ Fairness: **Perfect**")
+                        else:
+                            st.caption(f"⚖️ Fairness gap: **{gap}**")
 
                         if st.button("Propose", key=f"mag_prop_{i}_{days_to_scan}", use_container_width=True):
                             poll = supabase.table('polls').insert({'team_id': team_id, 'status': 'active'}).execute()

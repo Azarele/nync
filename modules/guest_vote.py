@@ -93,15 +93,24 @@ def show(supabase, poll_id):
 
                 st.write("")
                 if st.button("Submit Votes", type="primary", use_container_width=True):
-                    for opt_id, rating in ratings.items():
-                        if rating != "❌ Painful":
-                            supabase.table('poll_votes').insert({
-                                'poll_id': poll_id,
-                                'option_id': opt_id,
-                                'voter_name': f"{guest_name.strip()} ({guest_email.strip()}) - {rating}"
-                            }).execute()
-                    st.session_state.guest_voted = True
-                    st.rerun()
+                    voter_key = f"{guest_name.strip()} ({guest_email.strip()})"
+                    # Check if this guest already voted on any option in this poll
+                    existing = supabase.table('poll_votes').select('id').eq('poll_id', poll_id).ilike('voter_name', f"{voter_key}%").limit(1).execute()
+                    if existing.data:
+                        st.warning("⚠️ You've already submitted your votes for this poll.")
+                    else:
+                        for opt_id, rating in ratings.items():
+                            if rating != "❌ Painful":
+                                try:
+                                    supabase.table('poll_votes').insert({
+                                        'poll_id': poll_id,
+                                        'option_id': opt_id,
+                                        'voter_name': f"{voter_key} - {rating}"
+                                    }).execute()
+                                except Exception:
+                                    pass  # Unique constraint fallback
+                        st.session_state.guest_voted = True
+                        st.rerun()
 
     except Exception as e:
         st.error(f"An error occurred: {e}")

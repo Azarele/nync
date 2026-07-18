@@ -2,7 +2,41 @@ import streamlit as st
 import auth_utils as auth
 import billing_utils
 import time
-import pytz
+
+# Curated timezone list — covers 99% of users without loading all 593 pytz entries
+COMMON_TIMEZONES = [
+    # UTC
+    "UTC",
+    # Americas
+    "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles",
+    "America/Anchorage", "America/Halifax", "America/Toronto", "America/Vancouver",
+    "America/Mexico_City", "America/Bogota", "America/Lima", "America/Santiago",
+    "America/Sao_Paulo", "America/Buenos_Aires", "America/Caracas", "America/Phoenix",
+    "America/Indiana/Indianapolis", "America/Puerto_Rico",
+    # Europe
+    "Europe/London", "Europe/Dublin", "Europe/Lisbon", "Europe/Paris",
+    "Europe/Berlin", "Europe/Amsterdam", "Europe/Brussels", "Europe/Madrid",
+    "Europe/Rome", "Europe/Vienna", "Europe/Zurich", "Europe/Stockholm",
+    "Europe/Oslo", "Europe/Copenhagen", "Europe/Helsinki", "Europe/Warsaw",
+    "Europe/Prague", "Europe/Budapest", "Europe/Bucharest", "Europe/Athens",
+    "Europe/Istanbul", "Europe/Moscow", "Europe/Kiev",
+    # Africa
+    "Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
+    "Africa/Casablanca", "Africa/Accra",
+    # Asia
+    "Asia/Dubai", "Asia/Riyadh", "Asia/Kuwait", "Asia/Baghdad",
+    "Asia/Tehran", "Asia/Karachi", "Asia/Kolkata", "Asia/Colombo",
+    "Asia/Dhaka", "Asia/Kathmandu", "Asia/Almaty", "Asia/Tashkent",
+    "Asia/Yangon", "Asia/Bangkok", "Asia/Ho_Chi_Minh", "Asia/Jakarta",
+    "Asia/Singapore", "Asia/Kuala_Lumpur", "Asia/Manila", "Asia/Hong_Kong",
+    "Asia/Shanghai", "Asia/Taipei", "Asia/Seoul", "Asia/Tokyo",
+    "Asia/Vladivostok", "Asia/Magadan",
+    # Australia & Pacific
+    "Australia/Perth", "Australia/Darwin", "Australia/Adelaide",
+    "Australia/Brisbane", "Australia/Sydney", "Australia/Melbourne",
+    "Australia/Hobart", "Pacific/Auckland", "Pacific/Fiji",
+    "Pacific/Honolulu", "Pacific/Guam",
+]
 
 @st.fragment
 def render_roster(user, supabase, selected_tid, my_role, current_tier):
@@ -11,7 +45,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
             roster_data = supabase.table('team_members').select('id, user_id, role, ghost_name, ghost_email, ghost_timezone, profiles(email, default_timezone)').eq('team_id', selected_tid).execute()
             
             if roster_data.data:
-                ALL_TZS = pytz.all_timezones
+                ALL_TZS = COMMON_TIMEZONES
                 current_members = len(roster_data.data)
                 
                 TIER_LIMITS = {'free': 3, 'squad': 10, 'guild': 25, 'empire': 100}
@@ -51,7 +85,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                         c1.markdown(f"**{display_name}**")
                         
                     if my_role == 'admin':
-                        tz_options = ALL_TZS if m_tz in ALL_TZS else ALL_TZS + [m_tz]
+                        tz_options = COMMON_TIMEZONES if m_tz in COMMON_TIMEZONES else [m_tz] + COMMON_TIMEZONES
                         c2.selectbox("TZ", tz_options, index=tz_options.index(m_tz), key=f"tz_{row_id}", label_visibility="collapsed")
                             
                         if m_user_id != user.id:
@@ -93,7 +127,7 @@ def render_roster(user, supabase, selected_tid, my_role, current_tier):
                             col1, col2, col3 = st.columns([2, 2, 3])
                             g_name = col1.text_input("Name", placeholder="John Doe")
                             g_email = col2.text_input("Email", placeholder="(Optional)")
-                            default_tz_index = ALL_TZS.index("UTC") if "UTC" in ALL_TZS else 0
+                            default_tz_index = COMMON_TIMEZONES.index("UTC")
                             g_tz = col3.selectbox("Timezone", ALL_TZS, index=default_tz_index)
                             if st.form_submit_button("Add Dummy"):
                                 if g_name:
