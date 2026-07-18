@@ -206,12 +206,12 @@ def show(supabase, team_id):
                     col_votes.write(f"🗳️ {len(voters)} Votes")
                     if voters: col_votes.caption(f"{', '.join(voters)}")
 
-                    user_name = st.session_state.user.email.split('@')[0]
-                    has_voted = user_name in voters
+                    user_email = st.session_state.user.email
+                    has_voted = user_email in voters
 
                     if col_btn.button("Unvote" if has_voted else "Vote", key=f"vote_{o_id}", type="primary" if not has_voted else "secondary", use_container_width=True):
                         if has_voted:
-                            supabase.table('poll_votes').delete().eq('poll_id', p['id']).eq('voter_name', user_name).execute()
+                            supabase.table('poll_votes').delete().eq('poll_id', p['id']).eq('voter_name', user_email).execute()
                             st.rerun()
                         else:
                             st.query_params["vote"] = p['id']

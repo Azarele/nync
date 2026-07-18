@@ -1,9 +1,15 @@
 import streamlit as st
 import billing_utils
 
-PRICE_SQUAD = "price_1Smm9VIlTLkLyuizLNG57F1g"
-PRICE_GUILD = "price_1SmmATIlTLkLyuizW9PcnZrN"
-PRICE_EMPIRE = "price_1SmmB0IlTLkLyuiz6xySQvqd"
+def _get_price(key, fallback):
+    try:
+        return st.secrets.get("stripe", {}).get(key, fallback)
+    except:
+        return fallback
+
+PRICE_SQUAD = _get_price("price_squad", "price_1Smm9VIlTLkLyuizLNG57F1g")
+PRICE_GUILD = _get_price("price_guild", "price_1SmmATIlTLkLyuizW9PcnZrN")
+PRICE_EMPIRE = _get_price("price_empire", "price_1SmmB0IlTLkLyuiz6xySQvqd")
 
 def show():
     st.header("💎 Upgrade Your Team")

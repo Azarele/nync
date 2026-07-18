@@ -5,6 +5,14 @@ import base64
 
 RATING_PAIN = {"✅ Good": 0, "⚠️ Okay": 5, "❌ Painful": 10}
 
+@st.cache_resource
+def _get_logo_b64():
+    try:
+        with open('nync_marketing.png', 'rb') as f:
+            return base64.b64encode(f.read()).decode()
+    except:
+        return None
+
 def show(supabase, poll_id):
     st.markdown("""
         <style>
@@ -16,14 +24,13 @@ def show(supabase, poll_id):
 
     st.markdown("<br><br>", unsafe_allow_html=True)
 
-    try:
-        with open("nync_marketing.png", "rb") as f:
-            img_data = base64.b64encode(f.read()).decode()
+    img_data = _get_logo_b64()
+    if img_data:
         st.markdown(
             f"<div style='text-align:center;'><img src='data:image/png;base64,{img_data}' width='72' style='filter:brightness(0) invert(1);'></div>",
             unsafe_allow_html=True
         )
-    except:
+    else:
         st.markdown("<h2 style='text-align:center; color:#4f46e5;'>⚡ Nync</h2>", unsafe_allow_html=True)
 
     try:

@@ -161,7 +161,7 @@ def show(user, supabase):
                 if st.button("Create Team", use_container_width=True):
                     if auth.create_team(user.id, new_team_name):
                         st.success(f"Team '{new_team_name}' created!")
-                        time.sleep(0.5)
+                        time.sleep(0.2)
                         st.rerun() 
 
     with c_join:
@@ -170,7 +170,7 @@ def show(user, supabase):
             if st.button("Join", use_container_width=True):
                 if auth.join_team_by_code(user.id, code):
                     st.success("Joined team successfully!")
-                    time.sleep(0.5)
+                    time.sleep(0.2)
                     st.rerun() 
                 else:
                     st.error("Invalid code.")
