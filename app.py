@@ -68,7 +68,7 @@ st.markdown("""
     .main .block-container {
         animation: slideUpFade 0.5s ease-out forwards;
         padding-top: 0rem !important;
-        margin-top: -20px !important;  /* Forcefully pulls the entire app to the absolute top edge! */
+        margin-top: -70px !important;  /* Forcefully pulls the entire app to the absolute top edge! */
         padding-bottom: 5rem !important;
         max-width: 1200px; /* Keeps the UI tight and readable */
     }
