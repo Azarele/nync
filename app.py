@@ -60,21 +60,27 @@ st.markdown("""
         color: #f4f4f5; 
     } 
     
-    /* Hide Streamlit header completely */
-    header { visibility: hidden !important; display: none !important; height: 0px !important; }
-    .stApp > header { display: none !important; }
-    [data-testid="stHeader"] { display: none !important; height: 0px !important; }
-    [data-testid="stToolbar"] { display: none !important; height: 0px !important; }
+    /* Nuclear header removal - all known Streamlit header elements */
+    header { visibility: hidden !important; display: none !important; height: 0 !important; min-height: 0 !important; }
+    header[data-testid="stHeader"] { display: none !important; height: 0 !important; }
+    .stApp > header { display: none !important; height: 0 !important; }
+    [data-testid="stHeader"] { display: none !important; height: 0 !important; min-height: 0 !important; }
+    [data-testid="stToolbar"] { display: none !important; height: 0 !important; }
+    [data-testid="stDecoration"] { display: none !important; height: 0 !important; }
+    [data-testid="stStatusWidget"] { display: none !important; }
     [data-testid="stSidebar"] { display: none !important; }
     [data-testid="stSidebarCollapsedControl"] { display: none !important; }
-    [data-testid="stHeaderAction"] { display: none !important; }
-    #root > div:first-child { height: 0px !important; }
-    .stApp > div:first-child > div:first-child { padding-top: 0 !important; }
+    #MainMenu { display: none !important; }
+    .viewerBadge_container__1QSob { display: none !important; }
+    .stDeployButton { display: none !important; }
+
+    /* Force content to top */
+    .stApp > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
 
     .main .block-container {
         animation: slideUpFade 0.5s ease-out forwards;
         padding-top: 0rem !important;
-        margin-top: -70px !important;
+        margin-top: -100px !important;
         padding-bottom: 5rem !important;
         max-width: 1200px;
     }
